@@ -1,0 +1,24 @@
+# Kiblegah relay (Cloudflare Worker). Placeholders only: no account ID, no secrets.
+# Secrets are set with `wrangler secret put` (see README.md), never in this file.
+name = "kiblegah-relay"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+# The Cache API does not work on *.workers.dev, so workers.dev is off and the Worker is served
+# from a custom domain instead (below).
+workers_dev = false
+
+# Your own hostname (placeholder, replace before deploying). Cloudflare creates DNS and certificate.
+routes = [
+  { pattern = "relay.example.com", custom_domain = true },
+]
+
+[vars]
+# Soft per-IP limit per minute and Worker instance (in addition to the binding below).
+RATE_LIMIT_PER_MIN = "120"
+
+# Per-IP limit through the Cloudflare rate limiting binding (per location, not just per instance).
+# namespace_id is any number that is unique within your account; it is not an account ID.
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }

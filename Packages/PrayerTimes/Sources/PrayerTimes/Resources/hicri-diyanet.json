@@ -1,0 +1,86 @@
+{
+ "kaynak": "namazvakitleri.diyanet.gov.tr (annual table, column „Hicri Tarih“)",
+ "son": "2027-12-31",
+ "aylar": [
+  {
+   "yil": 1448,
+   "ay": 5,
+   "baslangic": "2026-10-12"
+  },
+  {
+   "yil": 1448,
+   "ay": 6,
+   "baslangic": "2026-11-10"
+  },
+  {
+   "yil": 1448,
+   "ay": 7,
+   "baslangic": "2026-12-10"
+  },
+  {
+   "yil": 1448,
+   "ay": 8,
+   "baslangic": "2027-01-09"
+  },
+  {
+   "yil": 1448,
+   "ay": 9,
+   "baslangic": "2027-02-08"
+  },
+  {
+   "yil": 1448,
+   "ay": 10,
+   "baslangic": "2027-03-09"
+  },
+  {
+   "yil": 1448,
+   "ay": 11,
+   "baslangic": "2027-04-08"
+  },
+  {
+   "yil": 1448,
+   "ay": 12,
+   "baslangic": "2027-05-07"
+  },
+  {
+   "yil": 1449,
+   "ay": 1,
+   "baslangic": "2027-06-06"
+  },
+  {
+   "yil": 1449,
+   "ay": 2,
+   "baslangic": "2027-07-05"
+  },
+  {
+   "yil": 1449,
+   "ay": 3,
+   "baslangic": "2027-08-03"
+  },
+  {
+   "yil": 1449,
+   "ay": 4,
+   "baslangic": "2027-09-02"
+  },
+  {
+   "yil": 1449,
+   "ay": 5,
+   "baslangic": "2027-10-01"
+  },
+  {
+   "yil": 1449,
+   "ay": 6,
+   "baslangic": "2027-10-31"
+  },
+  {
+   "yil": 1449,
+   "ay": 7,
+   "baslangic": "2027-11-29"
+  },
+  {
+   "yil": 1449,
+   "ay": 8,
+   "baslangic": "2027-12-29"
+  }
+ ]
+}

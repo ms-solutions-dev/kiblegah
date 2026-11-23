@@ -1,0 +1,251 @@
+# Kıblegâh – project description for XcodeGen.
+#
+# The `.xcodeproj` is generated from this file and is not checked in:
+#   xcodegen generate
+
+name: Kiblegah
+
+options:
+  bundleIdPrefix: dev.ms-solutions
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "26.0"
+    watchOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+packages:
+  Core:
+    path: Packages/Core
+  DesignSystem:
+    path: Packages/DesignSystem
+  ContentPacks:
+    path: Packages/ContentPacks
+  PrayerTimes:
+    path: Packages/PrayerTimes
+  Qibla:
+    path: Packages/Qibla
+  Quran:
+    path: Packages/Quran
+  Duas:
+    path: Packages/Duas
+  UserData:
+    path: Packages/UserData
+  Features:
+    path: Packages/Features
+  WidgetBridge:
+    path: Packages/WidgetBridge
+
+# Config/Base.xcconfig includes the optional, untracked Config/Local.xcconfig
+# (development team, relay host). Copy Config/Local.xcconfig.example to start.
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+targets:
+  Kiblegah:
+    type: application
+    platform: iOS
+    sources:
+      - App/Sources
+      - path: App/Resources
+        buildPhase: resources
+        excludes:
+          - Paketler
+      # Folder reference: every content pack stays a subfolder (manifest.json + veri.sqlite).
+      # Filled by tools/content/fetch.sh; the app also runs with an empty folder.
+      - path: App/Resources/Paketler
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: Core
+      - package: DesignSystem
+      - package: ContentPacks
+      - package: PrayerTimes
+      - package: Qibla
+      - package: Quran
+      - package: Duas
+      - package: UserData
+      - package: Features
+      - package: WidgetBridge
+      - target: KiblegahWidget
+      - target: KiblegahWatch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ms-solutions.kiblegah
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_ALTERNATE_APP_ICON_NAMES: AppIconKaf AppIconKabe AppIconMihrap AppIconYildiz AppIconUfuk AppIconKef AppIconUmmet
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+    entitlements:
+      path: App/Kiblegah.entitlements
+      properties:
+        # Widgets and the control read the prayer time snapshot, theme and location from here.
+        com.apple.security.application-groups:
+          - group.dev.ms-solutions.kiblegah
+        # Prayer time notifications may break through Focus.
+        com.apple.developer.usernotifications.time-sensitive: true
+        # Optional iCloud sync of user data (off by default).
+        com.apple.developer.icloud-container-identifiers: [iCloud.dev.ms-solutions.kiblegah]
+        com.apple.developer.icloud-services: [CloudKit]
+        aps-environment: development
+    info:
+      path: App/Info-Kiblegah.plist
+      properties:
+        CFBundleDisplayName: Kıblegâh
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Siri and Spotlight also find "Kıblegâh" without ı and â.
+        INAlternativeAppNames:
+          - INAlternativeAppName: Kiblegah
+          - INAlternativeAppName: Kible
+        ITSAppUsesNonExemptEncryption: false
+        CADisableMinimumFrameDurationOnPhone: true
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        CFBundleLocalizations: [tr, de, en]
+        CFBundleDevelopmentRegion: en
+        # Deep links from widgets, the control and shared cards.
+        CFBundleURLTypes:
+          - CFBundleURLName: dev.ms-solutions.kiblegah
+            CFBundleURLSchemes: [kiblegah]
+        NSLocationWhenInUseUsageDescription: Kıble yönü ve namaz vakitleri için konumun cihazında kullanılır.
+        NSCameraUsageDescription: Kıble yönünü kamera görüntüsünün üzerinde göstermek için. Görüntü kaydedilmez.
+        NSMotionUsageDescription: Telefonu düz ya da dik tuttuğunu anlamak için hareket sensörü kullanılır.
+        NSPhotoLibraryAddUsageDescription: Paylaşım kartını Fotoğraflar'a kaydetmek için. Fotoğraflarına bakılmaz.
+        UIBackgroundModes: [audio, fetch, remote-notification]
+        BGTaskSchedulerPermittedIdentifiers: [dev.ms-solutions.kiblegah.yenile]
+        NSSupportsLiveActivities: true
+        NSAlarmKitUsageDescription: Seçtiğin vakitlerde tam ezanı alarm olarak çalmak için.
+        # Optional own prayer time server in the local network (Settings → server address).
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Namaz vakitlerini yerel ağdaki vakit sunucusundan almak için.
+        # Host of the optional relay (relay/, Cloudflare Worker) from Config/Local.xcconfig; empty = none.
+        VermittlerAdresi: $(RELAY_HOST)
+
+  # Widgets, Live Activity and the qibla control. Reads only the snapshot from the
+  # App Group; texts come from the same string catalog as the app.
+  KiblegahWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widget/Sources
+      - path: App/Resources/Localizable.xcstrings
+        buildPhase: resources
+    dependencies:
+      - package: Core
+      - package: WidgetBridge
+      - package: DesignSystem
+      - package: Qibla
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+      - sdk: AppIntents.framework
+      - sdk: ActivityKit.framework
+    entitlements:
+      path: Widget/KiblegahWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.ms-solutions.kiblegah
+    info:
+      path: Widget/Info-KiblegahWidget.plist
+      properties:
+        CFBundleDisplayName: Kıblegâh
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleLocalizations: [tr, de, en]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ms-solutions.kiblegah.widget
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+
+  # Watch app: shows the snapshot the iPhone sends over WatchConnectivity.
+  KiblegahWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - Watch/Sources
+      - Watch/Resources
+      # The complication views, for the README screenshots (DEBUG, ComplicationGallery).
+      - Watch/Widget/Sources/ComplicationViews.swift
+      - path: App/Resources/Localizable.xcstrings
+        buildPhase: resources
+      # The location permission text in German and English (otherwise only the Turkish default below).
+      - path: App/Resources/InfoPlist.xcstrings
+        buildPhase: resources
+    dependencies:
+      - package: WidgetBridge
+      - package: Qibla
+      - target: KiblegahWatchWidget
+      - sdk: WidgetKit.framework
+    entitlements:
+      path: Watch/KiblegahWatch.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.ms-solutions.kiblegah
+    info:
+      path: Watch/Info-KiblegahWatch.plist
+      properties:
+        CFBundleDisplayName: Kıblegâh
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleLocalizations: [tr, de, en]
+        WKApplication: true
+        CFBundleIconName: AppIcon
+        WKCompanionAppBundleIdentifier: dev.ms-solutions.kiblegah
+        NSLocationWhenInUseUsageDescription: Kıble yönünü saatinde göstermek için pusula kullanılır.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ms-solutions.kiblegah.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # Watch complications.
+  KiblegahWatchWidget:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - Watch/Widget/Sources
+      - path: App/Resources/Localizable.xcstrings
+        buildPhase: resources
+    dependencies:
+      - package: WidgetBridge
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    entitlements:
+      path: Watch/Widget/KiblegahWatchWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.dev.ms-solutions.kiblegah
+    info:
+      path: Watch/Widget/Info-KiblegahWatchWidget.plist
+      properties:
+        CFBundleDisplayName: Kıblegâh
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleLocalizations: [tr, de, en]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ms-solutions.kiblegah.watchkitapp.widget
+        TARGETED_DEVICE_FAMILY: "4"
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES

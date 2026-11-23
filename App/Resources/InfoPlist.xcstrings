@@ -1,0 +1,144 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "NSLocationWhenInUseUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kıble yönü ve namaz vakitleri için konumun cihazında kullanılır."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für Kıble-Richtung und Gebetszeiten wird dein Standort auf dem Gerät verwendet."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your location is used on your device for the Qibla direction and prayer times."
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kıble yönünü kamera görüntüsünün üzerinde göstermek için. Görüntü kaydedilmez."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um die Kıble-Richtung über dem Kamerabild zu zeigen. Es wird nichts aufgenommen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To show the Qibla direction over the camera image. Nothing is recorded."
+          }
+        }
+      }
+    },
+    "NSMotionUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telefonu düz ya da dik tuttuğunu anlamak için hareket sensörü kullanılır."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Damit erkannt wird, ob du das Handy flach oder aufrecht hältst."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To tell whether you hold the phone flat or upright."
+          }
+        }
+      }
+    },
+    "NSAlarmKitUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seçtiğin vakitlerde tam ezanı alarm olarak çalmak için."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um zu den gewählten Gebetszeiten den vollen Ezan als Wecker abzuspielen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To play the full adhan as an alarm at the prayer times you choose."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Namaz vakitlerini yerel ağdaki vakit sunucusundan almak için."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um Gebetszeiten vom Vakit-Server in deinem lokalen Netz zu holen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To fetch prayer times from the prayer-time server on your local network."
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paylaşım kartını Fotoğraflar'a kaydetmek için. Fotoğraflarına bakılmaz."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Um die Teilkarte in Fotos zu sichern. Deine Fotos werden nicht gelesen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "To save the share card to Photos. Your photos are not read."
+          }
+        }
+      }
+    }
+  }
+}

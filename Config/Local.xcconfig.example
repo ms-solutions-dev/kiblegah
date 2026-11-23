@@ -1,0 +1,9 @@
+// Copy to Config/Local.xcconfig (ignored by git) and fill in.
+// Note: in xcconfig files `//` starts a comment, so write hosts without `https://`.
+
+// Your Apple development team, needed to run on a device.
+DEVELOPMENT_TEAM =
+
+// Optional host of your own relay (see relay/README.md), e.g. relay.example.com.
+// Empty: the mushaf view uses the reflowed text instead of page layouts.
+RELAY_HOST =

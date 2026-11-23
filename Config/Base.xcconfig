@@ -1,0 +1,7 @@
+// Shared build settings. Personal values go into Config/Local.xcconfig (not tracked):
+//   cp Config/Local.xcconfig.example Config/Local.xcconfig
+
+DEVELOPMENT_TEAM =
+RELAY_HOST =
+
+#include? "Local.xcconfig"

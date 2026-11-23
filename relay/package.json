@@ -1,0 +1,17 @@
+{
+  "name": "kiblegah-relay",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20251014.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.9",
+    "wrangler": "4.42.2"
+  }
+}

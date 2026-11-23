@@ -1,0 +1,38 @@
+[
+  {
+    "nr": 86,
+    "arabisch": "المقسط",
+    "feld": "anlam_en",
+    "alt": "The Requiter",
+    "neu": "The Equitable",
+    "grund": "al-Muqsit is the one who acts with equity (qist) and gives the wronged their right; \"Requiter\" (one who repays) is a different meaning. Compare al-muqsitin, \"those who act justly\", in 49:9 and 60:8. Not the same as \"The Just\" (no. 30, al-Adl).",
+    "quellen": [
+      "al-Ghazali, al-Maqsad al-asna, transl. D. Burrell and N. Daher (Islamic Texts Society, 1992), no. 86: \"al-Muqsit, the Equitable\"",
+      "T. P. Hughes, A Dictionary of Islam (1885), entry al-Muqsit: \"The Equitable\""
+    ]
+  },
+  {
+    "nr": 70,
+    "arabisch": "المقتدر",
+    "feld": "anlam_en",
+    "alt": "The Determiner",
+    "neu": "The Prevailing",
+    "grund": "al-Muqtadir names power over everything (intensive of al-Qadir), not determining. Burrell and Daher render it \"the All-Determiner\", but al-Ghazali himself counts it among the names that refer to power with something added. \"The All-Powerful\" (no. 69) and \"The Omnipotent\" (no. 10) are already taken.",
+    "quellen": [
+      "T. P. Hughes, A Dictionary of Islam (1885), entry al-Muqtadir: \"The Powerful or Prevailing\"",
+      "Saheeh International (meal-en-saheeh) renders muqtadir in 54:42 and 54:55 as \"Perfect in Ability\"",
+      "al-Ghazali, al-Maqsad al-asna, transl. D. Burrell and N. Daher, part 2, ch. 1: al-Muqtadir among the names that refer to power"
+    ]
+  },
+  {
+    "nr": 70,
+    "arabisch": "المقتدر",
+    "feld": "anlam_de",
+    "alt": "der alles Bestimmende",
+    "neu": "der Allmächtige",
+    "grund": "Same mistake as in English: al-Muqtadir names power, not determining. \"der Mächtige\" (no. 69) and \"der Allgewaltige\" (no. 10) are already taken.",
+    "quellen": [
+      "F. Bubenheim and N. Elyas, Der edle Qur'an (meal-de-bubenheim): muqtadir in 54:42 \"Allmächtigen\", in 54:55 \"allmächtigen Herrscher\""
+    ]
+  }
+]

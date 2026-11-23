@@ -1,0 +1,211 @@
+import ContentPacks
+import Core
+import DesignSystem
+import Quran
+import SwiftUI
+import UserData
+import WidgetBridge
+
+/// The shell: native tab bar with the four chosen areas and Keşfet.
+public struct RootView: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(Router.self) private var direction
+    @Environment(UserStore.self) private var store
+    @Environment(\.contentProvider) private var contentProvider
+    @Environment(\.scenePhase) private var phase
+    @Environment(RecitationPlayer.self) private var player
+    @Environment(\.plugins) private var plugins
+
+    public init() {}
+
+    public var body: some View {
+        @Bindable var direction = direction
+        TabView(selection: $direction.selected) {
+            // Sohbet only if the edition includes it (the saved order remains untouched).
+            ForEach(plugins.tabs(settings.tabs) + [.discover]) { tab in
+                Tab(value: tab) {
+                    TabRoot(tab: tab)
+                } label: {
+                    Label {
+                        Text(app: tab.titleKey)
+                    } icon: {
+                        Image(systemName: tab.icon)
+                    }
+                }
+            }
+        }
+        // Quran widgets (/): when the app comes and goes, not after every verse.
+        // Qibla control (lock screen, Control Center, Action button): straight to Qibla.
+        .onChange(of: phase, initial: true) { _, e in
+            #if os(iOS)
+                if e == .active, let url = KibleAcNiyeti.pending() {
+                    direction.open(url: url, tabs: settings.tabs)
+                }
+            #endif
+        }
+        .onChange(of: phase, initial: true) { _, e in
+            if e != .inactive {
+                QuranWidgetWriter.save(store: store, settings: settings, contentProvider: contentProvider)
+            }
+            if e == .background { ListenWidgetWriter.save(player, contentProvider: contentProvider) }
+        }
+        // „Kur'an dinle“: on start, pause and surah change, not per verse (reload budget).
+        .onChange(of: player.isPlaying) { ListenWidgetWriter.save(player, contentProvider: contentProvider) }
+        .onChange(of: player.current?.surah) {
+            ListenWidgetWriter.save(player, contentProvider: contentProvider)
+        }
+        #if os(iOS)
+            .fullScreenCover(isPresented: Binding(get: { !settings.onboardingDone }, set: { _ in })) {
+                OnboardingScreen()
+            }
+        #else
+            .sheet(isPresented: Binding(get: { !settings.onboardingDone }, set: { _ in })) {
+                OnboardingScreen()
+            }
+        #endif
+    }
+}
+
+/// One tab with its own navigation stack.
+struct TabRoot: View {
+    @Environment(Router.self) private var direction
+    let tab: AppTab
+
+    var body: some View {
+        @Bindable var direction = direction
+        NavigationStack(path: Binding(get: { direction.path[tab] ?? [] }, set: { direction.path[tab] = $0 }))
+        {
+            TabScreen(tab: tab)
+                .navigationDestination(for: Goal.self) { goal in
+                    GoalScreen(goal: goal)
+                }
+        }
+    }
+}
+
+/// The home screen of an area.
+struct TabScreen: View {
+    let tab: AppTab
+
+    var body: some View {
+        switch tab {
+        case .discover: DiscoverScreen()
+        case .prayerTimes: TodayScreen()
+        case .qibla: QiblaScreen()
+        case .quran: QuranScreen()
+        case .duas: DuasScreen()
+        case .dhikr: DhikrScreen()
+        case .divineNames: DivineNamesScreen()
+        case .hadith: HadithScreen()
+        case .talks: PluginScreen(goal: .talks)
+        case .quiz: QuizScreen()
+        }
+    }
+}
+
+/// A destination within a stack.
+public struct GoalScreen: View {
+    let goal: Goal
+
+    public init(goal: Goal) { self.goal = goal }
+
+    public var body: some View {
+        switch goal {
+        case .settings: SettingsScreen()
+        case .dhikr: DhikrScreen()
+        case .divineName: DivineNamesScreen()
+        case .hadith: HadithScreen()
+        case .hadithCategory(let k, let name): HadithScreen(parent: k, title: name)
+        case .hadithDetail(let n): HadithDetailScreen(identifier: n)
+        case .collections: CollectionsScreen().pluginWrapper()
+        case .readingGoals: ReadingGoalsScreen()
+        // Provided by plugins of the app target; without one an empty state.
+        case .talks, .talkChannels, .talkSaved, .talkSubscribed, .talkPack, .plugin:
+            PluginScreen(goal: goal)
+        case .storage: StorageScreen()
+        case .memorization: MemorizationScreen()
+        case .mushaf(let n): MushafScreen(start: n)
+        case .memorizationPractice(let a): MemorizationPracticeScreen(key: a)
+        case .collection(let k): CollectionDetailScreen(identifier: k)
+        case .divineNameDetail(let n): DivineNameDetailScreen(number: n)
+        case .dhikrDivineName(let n): DhikrScreen(divineName: n)
+        case .guide: GuideScreen()
+        case .guideStep(let k): GuideStepScreen(sectionID: k)
+        case .calendar: CalendarScreen()
+        case .search: SearchScreen()
+        case .searchQuery(let q): SearchScreen(start: q)
+        case .dua(let slug): DuaDetailScreen(slug: slug)
+        case .verse(let a): QuranGoal(key: a)
+        case .notifications: NotificationsScreen()
+        case .allPrayerTimes: AllPrayerTimesScreen()
+        case .location: LocationPickerScreen()
+        case .downloaded: DownloadsScreen()
+        case .duaList(let k): DuaListScreen(category: k)
+        case .section(let s): TabScreen(tab: s)
+        case .quiz: QuizScreen()
+        case .quizGame(let request): QuizGameScreen(request: request)
+        case .quizPractice: QuizPracticeScreen()
+        case .quizDuello: QuizDuelScreen()
+        case .quizHistory: QuizHistoryScreen()
+        case .quizSettings: QuizSettingsScreen()
+        }
+    }
+}
+
+extension AppTab {
+    var titleKey: LocalizedStringKey {
+        switch self {
+        case .prayerTimes: "sekme.vakit"
+        case .qibla: "sekme.kible"
+        case .quran: "sekme.kuran"
+        case .duas: "sekme.dualar"
+        case .dhikr: "sekme.zikir"
+        case .divineNames: "sekme.esma"
+        case .hadith: "sekme.hadis"
+        case .talks: "sekme.sohbet"
+        case .quiz: "sekme.quiz"
+        case .discover: "sekme.kesfet"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .prayerTimes: "sun.horizon"
+        case .qibla: "location.north.circle"
+        case .quran: "book"
+        case .duas: "hands.and.sparkles"
+        case .dhikr: "circle.dotted.circle"
+        case .divineNames: "sparkles"
+        case .hadith: "text.book.closed"
+        case .talks: "play.square.stack"
+        case .quiz: "questionmark.bubble"
+        case .discover: "square.grid.2x2"
+        }
+    }
+}
+
+/// A Quran destination: the reader, or with „Mushaf'ta aç“ directly the Mushaf page on which the
+/// destination begins. Without a page (content missing) it stays with the reader.
+struct QuranGoal: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(\.contentProvider) private var contentProvider
+    let key: ContentKey
+
+    var body: some View {
+        if settings.openInMushaf, let contentProvider, let n = Self.page(key, contentProvider) {
+            MushafScreen(start: n)
+        } else {
+            ReaderScreen(start: key)
+        }
+    }
+
+    /// Medine-604 page (V1) of the first verse; the Mushaf converts it to its own edition.
+    static func page(_ a: ContentKey, _ contentProvider: any ContentProvider) -> Int? {
+        if case .juz(let n) = a {
+            return contentProvider.juz(n).flatMap { contentProvider.key(index: $0.firstIndex) }.flatMap {
+                contentProvider.verse($0)?.page
+            }
+        }
+        return contentProvider.verse(firstVerse(a))?.page
+    }
+}
