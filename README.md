@@ -75,6 +75,40 @@ The complications are shown in full colour as the watch app renders them for the
   <img src="docs/screenshots/tr-03-discover.png" width="190" alt="Keşfet">
 </p>
 
+## FAQ
+
+### Are the prayer times the same as Diyanet's?
+
+Kıblegâh computes them on your device with Diyanet's parameters (İmsak 18°, Yatsı 17°/16°, temkin and the high-latitude rule) and is tested against the times Diyanet publishes for places in Türkiye, Germany and beyond.
+
+### Does Kıblegâh work offline?
+
+Prayer times, the qibla and the texts in the content packs work without a connection. Recitations and word meanings are loaded from the Quran Foundation's servers when you play or open them.
+
+### Is my location sent anywhere?
+
+No. Your location is only used on the device to compute prayer times and the qibla. There are no ads, no analytics and no account with us.
+
+### Which languages are supported?
+
+Turkish, German and English, for the app and for the Quran translations.
+
+### Is there an Apple Watch app?
+
+Yes, with the next prayer time, the qibla and complications for the watch face.
+
+### Where do the Quran text, translations and hadith come from?
+
+From Tanzil.net, QuranEnc.com, HadeethEnc.com and the Quran Foundation. Every source and its terms are listed in [CONTENT.md](CONTENT.md).
+
+### Türkçe: Kıblegâh nedir?
+
+Namaz vakitleri, kıble ve Kur'an-ı Kerim'i tek bir sade iPhone uygulamasında bir araya getirir. Vakitler Diyanet'in parametreleriyle cihazda hesaplanır; reklam ve takip yoktur.
+
+### Deutsch: Was ist Kıblegâh?
+
+Eine iPhone-App für Gebetszeiten, Qibla und den Koran. Die Gebetszeiten werden auf dem Gerät nach den Vorgaben der Diyanet berechnet, ohne Werbung und ohne Tracking.
+
 ## Requirements
 
 | | |
