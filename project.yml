@@ -57,6 +57,8 @@ targets:
     platform: iOS
     sources:
       - App/Sources
+      # Also in the widget target; the debug gallery shows the large widgets with it.
+      - Widget/Sources/PadWidgetViews.swift
       - path: App/Resources
         buildPhase: resources
         excludes:
@@ -82,7 +84,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ms-solutions.kiblegah
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_ALTERNATE_APP_ICON_NAMES: AppIconKaf AppIconKabe AppIconMihrap AppIconYildiz AppIconUfuk AppIconKef AppIconUmmet
         ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
@@ -115,6 +117,12 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # iPad: every orientation, the iPhone stays in portrait.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         CFBundleLocalizations: [tr, de, en]
         CFBundleDevelopmentRegion: en
         # Deep links from widgets, the control and shared cards.
@@ -171,7 +179,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ms-solutions.kiblegah.widget
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         SKIP_INSTALL: YES
 

@@ -6,6 +6,10 @@ import SwiftUI
 import UserData
 import WidgetBridge
 
+#if os(iOS)
+    import UIKit
+#endif
+
 /// The shell: native tab bar with the four chosen areas and Keşfet.
 public struct RootView: View {
     @Environment(AppSettings.self) private var settings
@@ -20,16 +24,26 @@ public struct RootView: View {
 
     public var body: some View {
         @Bindable var direction = direction
-        TabView(selection: $direction.selected) {
-            // Sohbet only if the edition includes it (the saved order remains untouched).
-            ForEach(plugins.tabs(settings.tabs) + [.discover]) { tab in
-                Tab(value: tab) {
-                    TabRoot(tab: tab)
-                } label: {
-                    Label {
-                        Text(app: tab.titleKey)
-                    } icon: {
-                        Image(systemName: tab.icon)
+        Group {
+            if PadLayout.isPad {
+                #if DEBUG
+                    PadShell().modifier(PadNarrowForScreenshot())
+                #else
+                    PadShell()
+                #endif
+            } else {
+                TabView(selection: $direction.selected) {
+                    // Sohbet only if the edition includes it (the saved order remains untouched).
+                    ForEach(plugins.tabs(settings.tabs) + [.discover]) { tab in
+                        Tab(value: tab) {
+                            TabRoot(tab: tab)
+                        } label: {
+                            Label {
+                                Text(app: tab.titleKey)
+                            } icon: {
+                                Image(systemName: tab.icon)
+                            }
+                        }
                     }
                 }
             }
@@ -71,28 +85,47 @@ struct TabRoot: View {
     @Environment(Router.self) private var direction
     let tab: AppTab
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var columnPlan: PadColumnPlan? {
+        PadLayout.isPad && sizeClass == .regular ? PadColumnPlan.plan(for: tab) : nil
+    }
+
     var body: some View {
         @Bindable var direction = direction
-        NavigationStack(path: Binding(get: { direction.path[tab] ?? [] }, set: { direction.path[tab] = $0 }))
-        {
-            TabScreen(tab: tab)
-                .navigationDestination(for: Goal.self) { goal in
-                    GoalScreen(goal: goal)
+        Group {
+            if let columnPlan {
+                PadColumnArea(tab: tab, plan: columnPlan)
+            } else {
+                NavigationStack(
+                    path: Binding(get: { direction.path[tab] ?? [] }, set: { direction.path[tab] = $0 })
+                ) {
+                    TabScreen(tab: tab)
+                        .padPlayerInset(pageOwnsPlayer: tab == .quran)
+                        .navigationDestination(for: Goal.self) { goal in
+                            GoalScreen(goal: goal)
+                                .padPlayerInset(pageOwnsPlayer: goal.showsReader)
+                        }
                 }
+            }
         }
+        .modifier(PadColumnPlayer(active: columnPlan != nil))
     }
 }
 
 /// The home screen of an area.
 struct TabScreen: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
     let tab: AppTab
 
     var body: some View {
         switch tab {
-        case .discover: DiscoverScreen()
+        case .discover:
+            if PadLayout.isPad, sizeClass == .regular { PadDiscoverScreen() } else { DiscoverScreen() }
         case .prayerTimes: TodayScreen()
         case .qibla: QiblaScreen()
-        case .quran: QuranScreen()
+        case .quran:
+            if PadLayout.isPad, sizeClass == .regular { PadQuranScreen() } else { QuranScreen() }
         case .duas: DuasScreen()
         case .dhikr: DhikrScreen()
         case .divineNames: DivineNamesScreen()
@@ -124,7 +157,7 @@ public struct GoalScreen: View {
             PluginScreen(goal: goal)
         case .storage: StorageScreen()
         case .memorization: MemorizationScreen()
-        case .mushaf(let n): MushafScreen(start: n)
+        case .mushaf(let n): MushafGoal(page: n)
         case .memorizationPractice(let a): MemorizationPracticeScreen(key: a)
         case .collection(let k): CollectionDetailScreen(identifier: k)
         case .divineNameDetail(let n): DivineNameDetailScreen(number: n)
@@ -184,15 +217,35 @@ extension AppTab {
     }
 }
 
+/// A page of the Mushaf as a destination; on the iPad the full screen book above the reader.
+struct MushafGoal: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.contentProvider) private var contentProvider
+    let page: Int
+
+    var body: some View {
+        if PadLayout.isPad, sizeClass == .regular, let p = contentProvider?.page(page),
+            let k = contentProvider?.key(index: p.firstIndex)
+        {
+            PadQuranScreen(start: k, opensBook: true)
+        } else {
+            MushafScreen(start: page)
+        }
+    }
+}
+
 /// A Quran destination: the reader, or with „Mushaf'ta aç“ directly the Mushaf page on which the
 /// destination begins. Without a page (content missing) it stays with the reader.
 struct QuranGoal: View {
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(AppSettings.self) private var settings
     @Environment(\.contentProvider) private var contentProvider
     let key: ContentKey
 
     var body: some View {
-        if settings.openInMushaf, let contentProvider, let n = Self.page(key, contentProvider) {
+        if PadLayout.isPad, sizeClass == .regular {
+            PadQuranScreen(start: key, opensBook: settings.openInMushaf)
+        } else if settings.openInMushaf, let contentProvider, let n = Self.page(key, contentProvider) {
             MushafScreen(start: n)
         } else {
             ReaderScreen(start: key)
@@ -209,3 +262,69 @@ struct QuranGoal: View {
         return contentProvider.verse(firstVerse(a))?.page
     }
 }
+
+extension Goal {
+    /// The Quran columns show the player themselves.
+    var showsReader: Bool {
+        switch self {
+        case .verse, .mushaf: true
+        default: false
+        }
+    }
+}
+
+extension View {
+    /// iPad: the global player below this page, so that nothing lies under it.
+    func padPlayerInset(pageOwnsPlayer: Bool) -> some View {
+        modifier(PadPlayerInset(pageOwnsPlayer: pageOwnsPlayer))
+    }
+}
+
+struct PadPlayerInset: ViewModifier {
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    let pageOwnsPlayer: Bool
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom) {
+            if PadLayout.isPad, !(pageOwnsPlayer && sizeClass == .regular) {
+                PadPlayerBar()
+            }
+        }
+    }
+}
+
+/// Around the columns of an area, which have no outer stack.
+private struct PadColumnPlayer: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active {
+            content.safeAreaInset(edge: .bottom) { PadPlayerBar() }
+        } else {
+            content
+        }
+    }
+}
+
+#if DEBUG && os(iOS)
+    /// Screenshots of a narrow window: `-ipadSchmal YES` makes the scene compact and the root 400 pt wide.
+    /// A real Split View cannot be set up from the command line.
+    private struct PadNarrowForScreenshot: ViewModifier {
+        private let on = UserDefaults.standard.bool(forKey: "ipadSchmal")
+
+        func body(content: Content) -> some View {
+            if on {
+                content
+                    .environment(\.horizontalSizeClass, .compact)
+                    .frame(width: 400)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                content
+            }
+        }
+    }
+#elseif DEBUG
+    private struct PadNarrowForScreenshot: ViewModifier {
+        func body(content: Content) -> some View { content }
+    }
+#endif

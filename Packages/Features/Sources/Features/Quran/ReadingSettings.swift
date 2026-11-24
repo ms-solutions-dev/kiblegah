@@ -21,11 +21,33 @@ public struct ReadingSettings: View {
         }
     }
 
+    /// iPad: inside the settings sheet, without its own bar.
+    var embedded = false
+
     public init() {}
 
+    init(embedded: Bool) { self.embedded = embedded }
+
     public var body: some View {
+        if embedded {
+            form
+        } else {
+            NavigationStack {
+                form
+                    .navigationTitle(localized("kuran.okuma_ayarlari"))
+                    .smallTitle()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(localized("genel.bitti")) { close() }
+                        }
+                    }
+            }
+        }
+    }
+
+    private var form: some View {
         @Bindable var a = settings
-        NavigationStack {
+        return
             Form {
                 Section {
                     if let contentProvider, let verse = contentProvider.verse(.verse(surah: 1, verse: 4)) {
@@ -149,12 +171,6 @@ public struct ReadingSettings: View {
                 }
             }
             .pageBackground()
-            .navigationTitle(localized("kuran.okuma_ayarlari"))
-            .smallTitle()
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button(localized("genel.bitti")) { close() } }
-            }
-        }
     }
 
     private func sliderRow(

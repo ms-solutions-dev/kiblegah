@@ -45,6 +45,8 @@ struct QiblaScreen: View {
     /// Last hit state, for the hysteresis.
     @State private var wasHit = false
     @State private var selectingLocation = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var width: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,14 +56,35 @@ struct QiblaScreen: View {
                 Text(app: "kible.harita").tag(QiblaMode.map)
             }
             .pickerStyle(.segmented)
+            .frame(maxWidth: PadLayout.isPad ? 360 : nil)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: PadLayout.isPad ? .leading : .center)
             .zIndex(1)
 
             if let location = settings.location {
                 let qibla = QiblaCalculation.angle(location)
                 switch appearance {
-                case .compass: compass(location, qibla: qibla)
+                case .compass:
+                    if PadLayout.isPad, sizeClass == .regular, width >= 860 {
+                        // Landscape on the iPad: the instrument next to the map (board G15).
+                        HStack(spacing: 14) {
+                            compass(location, qibla: qibla)
+                                .padCard(theme, radius: 28)
+                                .clipShape(.rect(cornerRadius: 28))
+                                .frame(width: width * 0.53)
+                            QiblaMap(
+                                location: location, sensor: sensor, qibla: qibla,
+                                accuracy: calibrationSkipped && sensor.accuracy == .unavailable
+                                    ? .low : sensor.accuracy,
+                                switchToCompass: { sec(.compass) }
+                            )
+                            .clipShape(.rect(cornerRadius: 28))
+                        }
+                        .padding([.horizontal, .bottom], 14)
+                    } else {
+                        compass(location, qibla: qibla)
+                    }
                 case .camera:
                     QiblaCamera(
                         sensor: sensor, qibla: qibla, distance: QiblaCalculation.distance(location),
@@ -88,6 +111,7 @@ struct QiblaScreen: View {
                 }
             }
         }
+        .onGeometryChange(for: CGFloat.self, of: \.size.width) { width = $0 }
         .pageBackground()
         .navigationTitle(localized("sekme.kible"))
         .smallTitle()

@@ -119,7 +119,10 @@ extension ServerSource {
     public func religiousDays(year: Int) async throws -> [ReligiousDay] {
         var b = URLComponents(url: address.appending(path: "v1/dini-gunler"), resolvingAgainstBaseURL: false)!
         b.queryItems = [URLQueryItem(name: "yil", value: String(year))]
-        let (veri, answer) = try await session.data(from: b.url!)
+        // Like the table (8 s): without a limit an unreachable home server held up the refresh for 60 s.
+        var request = URLRequest(url: b.url!)
+        request.timeoutInterval = 8
+        let (veri, answer) = try await session.data(for: request)
         if let h = answer as? HTTPURLResponse, h.statusCode != 200 {
             throw PrayerTimeError.server(h.statusCode)
         }

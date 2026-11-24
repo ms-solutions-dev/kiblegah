@@ -21,137 +21,199 @@ struct SettingsScreen: View {
     @State private var locationOpen = false
     @State private var readingOpen = false
     @State private var icloudInitial: Bool?
+    /// iPad: only this part; the iPhone shows all of it in one list.
+    var section: PadSettingsScreen.Section? = nil
+
+    private func shows(_ s: PadSettingsScreen.Section) -> Bool { section == nil || section == s }
 
     var body: some View {
         @Bindable var a = settings
         Form {
-            Section {
-                PalettePicker(palette: $a.palette, locked: a.largeAndSimple)
-                AppIconPicker()
-                Picker(localized("ayar.gorunum"), selection: $a.appearance) {
-                    Text(app: "ayar.gorunum.sistem").tag(Appearance.system)
-                    Text(app: "ayar.gorunum.acik").tag(Appearance.light)
-                    Text(app: "ayar.gorunum.koyu").tag(Appearance.dark)
-                    Text(app: "ayar.gorunum.vakte_gore").tag(Appearance.byPrayerTime)
-                }
-                Toggle(isOn: $a.largeAndSimple) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(app: "ayar.buyuk_sade")
-                        Text(app: "ayar.buyuk_sade.alt").typography(.footnote).foregroundStyle(
-                            theme.colors.text2)
+            if shows(.appearance) {
+                Section {
+                    PalettePicker(palette: $a.palette, locked: a.largeAndSimple)
+                    AppIconPicker()
+                    Picker(localized("ayar.gorunum"), selection: $a.appearance) {
+                        Text(app: "ayar.gorunum.sistem").tag(Appearance.system)
+                        Text(app: "ayar.gorunum.acik").tag(Appearance.light)
+                        Text(app: "ayar.gorunum.koyu").tag(Appearance.dark)
+                        Text(app: "ayar.gorunum.vakte_gore").tag(Appearance.byPrayerTime)
                     }
+                    Toggle(isOn: $a.largeAndSimple) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app: "ayar.buyuk_sade")
+                            Text(app: "ayar.buyuk_sade.alt").typography(.footnote).foregroundStyle(
+                                theme.colors.text2)
+                        }
+                    }
+                    // The sidebar of the iPad has all areas; the four tabs are an iPhone matter.
+                    if !PadLayout.isPad {
+                        NavigationLink {
+                            EditTabsScreen()
+                        } label: {
+                            LabeledContent(
+                                localized("ayar.sekmeler"),
+                                value: plugins.tabs(settings.tabs).map { localized($0.nameKey) }.joined(
+                                    separator: ", "))
+                        }
+                    }
+                    if PadLayout.isPad {
+                        Picker(localized("ipad.aa.papier"), selection: $a.readingPaper) {
+                            ForEach(ReadingPaper.allCases, id: \.self) { p in
+                                Text(verbatim: localized(key: "ipad.papier.\(p.rawValue)")).tag(p.rawValue)
+                            }
+                        }
+                        LabeledContent(
+                            localized("ipad.ayar.bewegung"), value: localized("ipad.ayar.bewegung.wert"))
+                    }
+                } header: {
+                    Text(app: "ayar.bolum.gorunum")
                 }
-                NavigationLink {
-                    EditTabsScreen()
-                } label: {
-                    LabeledContent(
-                        localized("ayar.sekmeler"),
-                        value: plugins.tabs(settings.tabs).map { localized($0.nameKey) }.joined(
-                            separator: ", "))
-                }
-            } header: {
-                Text(app: "ayar.bolum.gorunum")
             }
 
-            Section {
-                NavigationLink(value: Goal.notifications) { Text(app: "bildirim.baslik") }
-                Button {
-                    locationOpen = true
-                } label: {
-                    LabeledContent(
-                        localized("konum.baslik"),
-                        value: (settings.automaticLocation ? localized("ayar.konum.otomatik") + " · " : "")
-                            + (settings.location?.name ?? "—"))
+            if section == nil {
+                Section {
+                    NavigationLink(value: Goal.notifications) { Text(app: "bildirim.baslik") }
+                    locationRow
+                    methodPickers
+                } header: {
+                    Text(app: "ayar.bolum.vakitler")
+                } footer: {
+                    Text(app: "ayar.vakit_hesabi.alt")
                 }
-                .foregroundStyle(theme.colors.text)
-                Picker(localized("ayar.vakit_hesabi"), selection: $a.prayerTimeMethod) {
-                    Text(app: "ayar.vakit_hesabi.diyanet").tag(PrayerTimeMethod.diyanet)
-                    Text(app: "ayar.vakit_hesabi.konum").tag(PrayerTimeMethod.location)
+            }
+            if section == .location {
+                Section { locationRow }
+            }
+            if section == .calculation {
+                Section {
+                    methodPickers
+                } footer: {
+                    Text(app: "ayar.vakit_hesabi.alt")
                 }
-                .onChange(of: settings.prayerTimeMethod) {
-                    Task { await prayerTimes.changeCalculation(settings) }
-                }
-                Picker(localized("ayar.kerahat"), selection: $a.karahatMinutes) {
-                    ForEach([30, 40, 45, 50, 60], id: \.self) { d in Text(app: "bildirim.dk.sade \(d)").tag(d)
+            }
+            if shows(.compass) {
+                Section {
+                    CompassStylePicker(style: $a.compassStyle, sade: a.largeAndSimple)
+                    Picker(localized("ayar.kible_baslangici"), selection: $a.qiblaStart) {
+                        Text(app: "kible.pusula").tag(QiblaStart.compass)
+                        Text(app: "kible.harita").tag(QiblaStart.map)
+                        Text(app: "ayar.kible_baslangici.son").tag(QiblaStart.lastChoice)
                     }
+                } header: {
+                    Text(app: "ayar.bolum.kible")
+                } footer: {
+                    Text(app: "ayar.kible_baslangici.alt")
                 }
-            } header: {
-                Text(app: "ayar.bolum.vakitler")
-            } footer: {
-                Text(app: "ayar.vakit_hesabi.alt")
             }
-            Section {
-                CompassStylePicker(style: $a.compassStyle, sade: a.largeAndSimple)
-                Picker(localized("ayar.kible_baslangici"), selection: $a.qiblaStart) {
-                    Text(app: "kible.pusula").tag(QiblaStart.compass)
-                    Text(app: "kible.harita").tag(QiblaStart.map)
-                    Text(app: "ayar.kible_baslangici.son").tag(QiblaStart.lastChoice)
-                }
-            } header: {
-                Text(app: "ayar.bolum.kible")
-            } footer: {
-                Text(app: "ayar.kible_baslangici.alt")
-            }
-            SlotView(.settingsAdvanced)
+            if section == nil { SlotView(.settingsAdvanced) }
 
-            Section {
-                Button {
-                    readingOpen = true
-                } label: {
-                    Text(app: "kuran.okuma_ayarlari")
+            if section == nil {
+                Section {
+                    Button {
+                        readingOpen = true
+                    } label: {
+                        Text(app: "kuran.okuma_ayarlari")
+                    }
+                    NavigationLink(value: Goal.storage) { Text(app: "depolama.baslik") }
+                    NavigationLink(value: Goal.quizSettings) { Text(app: "sekme.quiz") }
+                } header: {
+                    Text(app: "ayar.bolum.okuma")
                 }
-                NavigationLink(value: Goal.storage) { Text(app: "depolama.baslik") }
-                NavigationLink(value: Goal.quizSettings) { Text(app: "sekme.quiz") }
-            } header: {
-                Text(app: "ayar.bolum.okuma")
             }
             // Sohbet setting and AI conversations, depending on the edition.
-            SlotView(.settingsSections)
+            if section == nil || section == .data { SlotView(.settingsSections) }
 
-            Section {
-                LanguagePicker()
-            } footer: {
-                Text(app: "ayar.dil.alt")
+            if shows(.language) {
+                Section {
+                    LanguagePicker()
+                } footer: {
+                    Text(app: "ayar.dil.alt")
+                }
             }
 
-            Section {
-                Toggle(isOn: $a.iCloud) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(app: "ayar.icloud")
-                        Text(app: "ayar.icloud.alt").typography(.footnote).foregroundStyle(theme.colors.text2)
+            if shows(.data) {
+                Section {
+                    Toggle(isOn: $a.iCloud) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(app: "ayar.icloud")
+                            Text(app: "ayar.icloud.alt").typography(.footnote).foregroundStyle(
+                                theme.colors.text2)
+                        }
                     }
+                    if let b = icloudInitial, b != settings.iCloud {
+                        Text(app: "ayar.icloud.yeniden").typography(.footnote).foregroundStyle(
+                            theme.colors.warningText)
+                    }
+                    NavigationLink {
+                        PrivacyScreen()
+                    } label: {
+                        Text(app: "ayar.gizlilik")
+                    }
+                    NavigationLink {
+                        SourcesScreen()
+                    } label: {
+                        Text(app: "ayar.kaynaklar")
+                    }
+                } header: {
+                    Text(app: "ayar.bolum.veriler")
                 }
-                if let b = icloudInitial, b != settings.iCloud {
-                    Text(app: "ayar.icloud.yeniden").typography(.footnote).foregroundStyle(
-                        theme.colors.warningText)
-                }
-                NavigationLink {
-                    PrivacyScreen()
-                } label: {
-                    Text(app: "ayar.gizlilik")
-                }
-                NavigationLink {
-                    SourcesScreen()
-                } label: {
-                    Text(app: "ayar.kaynaklar")
-                }
-            } header: {
-                Text(app: "ayar.bolum.veriler")
-            }
+                if section == .data { SlotView(.settingsAdvanced) }
 
-            Section {
-                LabeledContent(
-                    localized("ayar.surum"),
-                    value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                Section {
+                    LabeledContent(
+                        localized("ayar.surum"),
+                        value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                }
             }
         }
         .pageBackground()
-        .navigationTitle(localized("ayarlar.baslik"))
+        .modifier(SettingsTitle(hasOwnTitle: section != nil))
         .sheet(isPresented: $locationOpen) { LocationPickerScreen() }
         .sheet(isPresented: $readingOpen) { ReadingSettings() }
         .onAppear { if icloudInitial == nil { icloudInitial = settings.iCloud } }
         .onChange(of: settings.karahatMinutes) { _, _ in
             Task { await prayerTimes.notification.schedule(table: prayerTimes.table, settings: settings) }
+        }
+    }
+
+    private var locationRow: some View {
+        Button {
+            locationOpen = true
+        } label: {
+            LabeledContent(
+                localized("konum.baslik"),
+                value: (settings.automaticLocation ? localized("ayar.konum.otomatik") + " · " : "")
+                    + (settings.location?.name ?? "—"))
+        }
+        .foregroundStyle(theme.colors.text)
+    }
+
+    @ViewBuilder private var methodPickers: some View {
+        @Bindable var a = settings
+        Picker(localized("ayar.vakit_hesabi"), selection: $a.prayerTimeMethod) {
+            Text(app: "ayar.vakit_hesabi.diyanet").tag(PrayerTimeMethod.diyanet)
+            Text(app: "ayar.vakit_hesabi.konum").tag(PrayerTimeMethod.location)
+        }
+        .onChange(of: settings.prayerTimeMethod) {
+            Task { await prayerTimes.changeCalculation(settings) }
+        }
+        Picker(localized("ayar.kerahat"), selection: $a.karahatMinutes) {
+            ForEach([30, 40, 45, 50, 60], id: \.self) { d in Text(app: "bildirim.dk.sade \(d)").tag(d)
+            }
+        }
+    }
+}
+
+/// Without a section the page carries its title itself.
+private struct SettingsTitle: ViewModifier {
+    let hasOwnTitle: Bool
+
+    func body(content: Content) -> some View {
+        if hasOwnTitle {
+            content
+        } else {
+            content.navigationTitle(localized("ayarlar.baslik"))
         }
     }
 }

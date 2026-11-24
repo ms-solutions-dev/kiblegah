@@ -136,7 +136,7 @@ public struct PrayerTimeTable: Codable, Sendable, Hashable {
     /// Appends computed days where the Diyanet days end - a computed
     /// day never replaces a Diyanet day.
     public func complete(_ yeni: PrayerTimeTable, today: Day) -> PrayerTimeTable {
-        let old = days.filter { $0.day >= today }
+        let old = days.filter { $0.day >= today.added(-1) }
         let end = old.last?.day
         let ek = yeni.days.filter { g in end.map { g.day > $0 } ?? true }
         return PrayerTimeTable(location: location, fetchedAt: yeni.fetchedAt, days: old + ek)

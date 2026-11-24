@@ -25,10 +25,13 @@ struct TodayScreen: View {
     @Environment(\.theme) private var theme
     @State private var selectingLocation = false
     @State private var karahatOpen = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         Group {
-            if let table = model.table, settings.location != nil {
+            if PadLayout.isPad, sizeClass == .regular {
+                PadTodayScreen(selectingLocation: $selectingLocation, karahatOpen: $karahatOpen)
+            } else if let table = model.table, settings.location != nil {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -80,7 +83,14 @@ struct TodayScreen: View {
                         status: status, time: time, tz: tz, friday: timeline.isFriday, ramadan: ramadan,
                         timeline: timeline
                     ) { karahatOpen = true }
-                    OtherTimes(day: listDay, status: status, tz: tz, friday: friday, tomorrow: night)
+                    // A narrow window on the iPad (board G11): the list of the times.
+                    if PadLayout.isPad {
+                        PrayerTimeList(
+                            day: listDay, status: status, tz: tz, friday: friday, ramadan: ramadan,
+                            tomorrow: night)
+                    } else {
+                        OtherTimes(day: listDay, status: status, tz: tz, friday: friday, tomorrow: night)
+                    }
                 }
                 // Without „sade“ the card itself shows the karahat ().
                 if settings.largeAndSimple, let k = timeline.karahat(time) { karahatBanner(k, tz: tz) }
@@ -306,11 +316,16 @@ struct PrayerTimeList: View {
         }
         .typography(next ? .emphasized : .body)
         .foregroundStyle(
-            next ? theme.colors.onAccent : (n == .sunrise ? theme.colors.text2 : theme.colors.text)
+            next
+                ? (PadLayout.isPad ? theme.colors.accent : theme.colors.onAccent)
+                : (n == .sunrise ? theme.colors.text2 : theme.colors.text)
         )
         .padding(.horizontal, 14)
         .padding(.vertical, next ? 14 : 11)
-        .background(next ? theme.colors.accent : .clear, in: .rect(cornerRadius: 18))
+        .background(
+            next ? (PadLayout.isPad ? theme.colors.surface2 : theme.colors.accent) : .clear,
+            in: .rect(cornerRadius: PadLayout.isPad ? 16 : 18)
+        )
         .accessibilityElement(children: .combine)
     }
 }

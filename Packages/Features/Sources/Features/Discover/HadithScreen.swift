@@ -92,6 +92,7 @@ struct HadithScreen: View {
                                 LabeledContent(k.name, value: "\(k.count)")
                             }
                         }
+                        .padRowSelection(.hadithCategory(k.id, k.name))
                     }
                 }
             }
@@ -133,6 +134,7 @@ struct HadithRow: View {
                     theme.colors.text2)
             }
         }
+        .padRowSelection(.hadithDetail(hadith.identifier))
     }
 }
 

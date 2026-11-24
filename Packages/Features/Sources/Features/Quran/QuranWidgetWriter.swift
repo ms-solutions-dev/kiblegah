@@ -1,5 +1,6 @@
 import ContentPacks
 import Core
+import DesignSystem
 import Foundation
 import PrayerTimes
 import Quran
@@ -98,8 +99,33 @@ public enum ListenWidgetWriter {
         #endif
     }
 
+    @MainActor private static func nowPlayingLabel(_ s: RecitationPlayer.QueueItem) -> String {
+        s.basmala ? localized("kuran.besmele") : localized("kuran.oynatici.ayet \(s.verse)")
+    }
+
     /// Proves the path from the widget button into the player; the app calls this in `init`.
     @MainActor public static func connect(_ o: RecitationPlayer, contentProvider: (any ContentProvider)?) {
+        #if os(iOS)
+            o.nowPlayingContent = .init(
+                title: { s in
+                    let label = nowPlayingLabel(s)
+                    guard let surah = contentProvider?.surah(s.surah) else { return "\(s.surah):\(s.verse)" }
+                    return surah.name(language: translationLanguage()) + " · " + label
+                },
+                artwork: { s in
+                    guard let surah = contentProvider?.surah(s.surah) else { return nil }
+                    return NowPlayingArtwork.image(arabicName: surah.nameArabic, label: nowPlayingLabel(s))
+                },
+                tallPreview: { surahNumber in
+                    guard let surah = contentProvider?.surah(surahNumber) else { return nil }
+                    return NowPlayingVideo.preview(arabicName: surah.nameArabic)
+                },
+                tallVideo: { surahNumber in
+                    guard let surah = contentProvider?.surah(surahNumber) else { return nil }
+                    return await NowPlayingVideo.shared.url(surah: surahNumber, arabicName: surah.nameArabic)
+                })
+        #endif
+        o.restoreLastPlayback()
         ListenHandoff.toggle = { surah, verse in
             if let s = o.current, s.surah == surah {
                 o.togglePause()

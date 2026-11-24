@@ -208,3 +208,16 @@ extension ColorTokens {
     /// dark outline that the map draws along with it.
     public var qiblaYellow: Color { Color(hex: 0xFACC1A) }
 }
+
+extension ColorTokens {
+    /// The same roles with the surface as the ground: pages inside a card (iPad columns).
+    public var onSurface: ColorTokens {
+        ColorTokens(
+            background: surface, surface: surface2, surface2: surface2, text: text, text2: text2,
+            accent: accent, onAccent: onAccent, sage: sage, label: label,
+            warningBackground: warningBackground, warningText: warningText,
+            errorBackground: errorBackground, errorText: errorText,
+            successBackground: successBackground, successText: successText,
+            kaaba: kaaba, line: line, control: control, scrim: scrim, dark: dark)
+    }
+}

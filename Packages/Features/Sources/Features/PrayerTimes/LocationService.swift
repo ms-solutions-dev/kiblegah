@@ -82,8 +82,39 @@ import PrayerTimes
 
     /// Place name, time zone and (via the service) Diyanet İlçe for a location.
     func location(_ place: CLLocation, server: ServerSource?) async -> Location {
-        let item = try? await MKReverseGeocodingRequest(location: place)?.mapItems.first
+        let item = await Self.placeName(place)
         return await location(item, place: place, server: server)
+    }
+
+    /// The longest the place name may take; after that the coordinates stand in.
+    nonisolated static let nameTimeout: Duration = .seconds(6)
+
+    /// Apple's reverse geocoding with a limit, tried twice: on the iPad behind a VPN the first answer
+    /// often did not come, and the button kept spinning (24.11.).
+    private static func placeName(_ place: CLLocation) async -> MKMapItem? {
+        for _ in 0..<2 {
+            let found = await withTaskGroup(of: FoundItem.self) { group in
+                group.addTask { await reverseGeocode(place) }
+                group.addTask {
+                    try? await Task.sleep(for: nameTimeout)
+                    return FoundItem(item: nil)
+                }
+                let first = await group.next() ?? FoundItem(item: nil)
+                group.cancelAll()
+                return first
+            }
+            if let item = found.item { return item }
+        }
+        return nil
+    }
+
+    private static func reverseGeocode(_ place: CLLocation) async -> FoundItem {
+        guard let request = MKReverseGeocodingRequest(location: place) else { return FoundItem(item: nil) }
+        do {
+            return FoundItem(item: try await request.mapItems.first)
+        } catch {
+            return FoundItem(item: nil)
+        }
     }
 
     /// Diyanet's places for the query, without network.
@@ -166,6 +197,12 @@ extension Location {
         CLLocation(latitude: latitude, longitude: longitude).distance(
             from: CLLocation(latitude: other.latitude, longitude: other.longitude))
     }
+}
+
+/// Carries a map item out of the race against the timeout. MKMapItem is not Sendable, but it is created on
+/// the MainActor and only read there afterwards.
+private struct FoundItem: @unchecked Sendable {
+    let item: MKMapItem?
 }
 
 /// The most accurate fix of one location request, shared between the request and the timeout.

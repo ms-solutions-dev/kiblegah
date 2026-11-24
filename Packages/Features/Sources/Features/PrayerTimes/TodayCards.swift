@@ -24,7 +24,7 @@ struct TodayCards: View {
         let _ = store.version
         let n = store.dailyPoints()
         VStack(alignment: .leading, spacing: 16) {
-            points(n)
+            TodayCardsPoints(page: Binding(get: { page ?? 0 }, set: { page = $0 }), points: n)
             WeekReading(reading: store.weeklyReading())
             path
         }
@@ -39,7 +39,76 @@ struct TodayCards: View {
 
     private var continueTarget: ContentKey { lastPosition ?? .verse(surah: 1, verse: 1) }
 
-    // MARK: Daily points
+    // MARK: Swipe stack
+
+    private var path: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(0..<Self.cardCount, id: \.self) { i in
+                        Group {
+                            switch i {
+                            case 0: VerseOfTheDayCard(day: day)
+                            case 1: QuestionOfTheDayCard(day: day)
+                            default: ContinueCard(lastPosition: lastPosition)
+                            }
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(theme.colors.surface, in: .rect(cornerRadius: 22))
+                        .containerRelativeFrame(.horizontal) { w, _ in max(200, w - 56) }
+                        .accessibilityElement(children: .contain)
+                        .id(i)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .scrollTargetLayout()
+            }
+            .scrollIndicators(.hidden)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $page)
+            .contentMargins(.horizontal, 16, for: .scrollContent)
+            .scrollClipDisabled()
+            .padding(.horizontal, -16)
+            HStack(spacing: 8) {
+                Text(app: "bugun.kaydir").typography(.footnote).foregroundStyle(theme.colors.text2)
+                Spacer(minLength: 8)
+                HStack(spacing: 5) {
+                    ForEach(0..<Self.cardCount, id: \.self) { i in
+                        Circle()
+                            .fill(i == (page ?? 0) ? theme.colors.accent : theme.colors.text2.opacity(0.35))
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                Text(verbatim: "\((page ?? 0) + 1) / \(Self.cardCount)").typography(.footnote)
+                    .monospacedDigit()
+                    .foregroundStyle(theme.colors.text2)
+            }
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+/// Daily points with the week and the streak: on the iPhone above the stack, on the iPad below the first screen.
+struct TodayCardsPoints: View {
+    @Environment(UserStore.self) private var store
+    @Environment(AppSettings.self) private var settings
+    @Environment(\.theme) private var theme
+    @Binding var page: Int
+    var points: DailyPoints? = nil
+
+    private var lastPosition: ContentKey? {
+        (store.lastPosition(khatm: settings.activeKhatm) ?? store.lastPosition()).flatMap {
+            ContentKey(text: $0)
+        }
+    }
+
+    private var continueTarget: ContentKey { lastPosition ?? .verse(surah: 1, verse: 1) }
+
+    var body: some View {
+        let _ = store.version
+        points(points ?? store.dailyPoints())
+    }
 
     private func points(_ n: DailyPoints) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -128,55 +197,6 @@ struct TodayCards: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             n.streak > 0 ? localized("bugun.seri.sesli \(n.streak)") : localized("bugun.seri.basla"))
-    }
-
-    // MARK: Swipe stack
-
-    private var path: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(0..<Self.cardCount, id: \.self) { i in
-                        Group {
-                            switch i {
-                            case 0: VerseOfTheDayCard(day: day)
-                            case 1: QuestionOfTheDayCard(day: day)
-                            default: ContinueCard(lastPosition: lastPosition)
-                            }
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .background(theme.colors.surface, in: .rect(cornerRadius: 22))
-                        .containerRelativeFrame(.horizontal) { w, _ in max(200, w - 56) }
-                        .accessibilityElement(children: .contain)
-                        .id(i)
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .scrollTargetLayout()
-            }
-            .scrollIndicators(.hidden)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $page)
-            .contentMargins(.horizontal, 16, for: .scrollContent)
-            .scrollClipDisabled()
-            .padding(.horizontal, -16)
-            HStack(spacing: 8) {
-                Text(app: "bugun.kaydir").typography(.footnote).foregroundStyle(theme.colors.text2)
-                Spacer(minLength: 8)
-                HStack(spacing: 5) {
-                    ForEach(0..<Self.cardCount, id: \.self) { i in
-                        Circle()
-                            .fill(i == (page ?? 0) ? theme.colors.accent : theme.colors.text2.opacity(0.35))
-                            .frame(width: 7, height: 7)
-                    }
-                }
-                Text(verbatim: "\((page ?? 0) + 1) / \(Self.cardCount)").typography(.footnote)
-                    .monospacedDigit()
-                    .foregroundStyle(theme.colors.text2)
-            }
-            .accessibilityHidden(true)
-        }
     }
 }
 
@@ -283,12 +303,15 @@ struct ContinueCard: View {
     @Environment(\.contentProvider) private var contentProvider
     @Environment(\.theme) private var theme
     let lastPosition: ContentKey?
+    var showsTitle = true
 
     var body: some View {
         let goal = lastPosition ?? .verse(surah: 1, verse: 1)
         VStack(alignment: .leading, spacing: 10) {
-            Text(app: "kuran.kaldigin_yer").typography(.footnote).textCase(.uppercase)
-                .foregroundStyle(theme.colors.label)
+            if showsTitle {
+                Text(app: "kuran.kaldigin_yer").typography(.footnote).textCase(.uppercase)
+                    .foregroundStyle(theme.colors.label)
+            }
             if lastPosition != nil, let contentProvider, case .verse(let s, let n) = goal,
                 let surah = contentProvider.surah(s)
             {

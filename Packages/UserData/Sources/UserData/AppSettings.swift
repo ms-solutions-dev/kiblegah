@@ -49,6 +49,14 @@ import Observation
     public var transliterationSize: Double { didSet { save(transliterationSize, Keys.transliterationSize) } }
     public var translationSize: Double { didSet { save(translationSize, Keys.translationSize) } }
     public var showTransliteration: Bool { didSet { save(showTransliteration, Keys.showTransliteration) } }
+    /// iPad, „Aa“: paper of the reading surfaces (`ReadingPaper`), separate from the color palette.
+    public var readingPaper: String { didSet { save(readingPaper, Keys.readingPaper) } }
+    /// iPad, „Aa“: the translation under each verse in the reader can be hidden.
+    public var showTranslationInReader: Bool {
+        didSet { save(showTranslationInReader, Keys.showTranslationInReader) }
+    }
+    /// iPad, „Aa“ in the book: a transliteration under the page, off by default. In the book only the Quran stands.
+    public var bookTranscription: Bool { didSet { save(bookTranscription, Keys.bookTranscription) } }
     public var selectedTranslations: [String] { didSet { save(selectedTranslations, Keys.translations) } }
     public var tajweedColors: Bool { didSet { save(tajweedColors, Keys.tajweed) } }
     /// Tajweed only for the mushaf page, via the switch in its title bar; independent of
@@ -130,6 +138,9 @@ import Observation
         transliterationSize = d.object(forKey: Keys.transliterationSize) as? Double ?? Self.textDefault
         translationSize = d.object(forKey: Keys.translationSize) as? Double ?? Self.textDefault
         showTransliteration = d.object(forKey: Keys.showTransliteration) as? Bool ?? true
+        readingPaper = d.string(forKey: Keys.readingPaper) ?? "auto"
+        showTranslationInReader = d.object(forKey: Keys.showTranslationInReader) as? Bool ?? true
+        bookTranscription = d.bool(forKey: Keys.bookTranscription)
         selectedTranslations = d.stringArray(forKey: Keys.translations) ?? []
         tajweedColors = d.bool(forKey: Keys.tajweed)
         mushafTajweed = d.bool(forKey: Keys.mushafTajweed)
@@ -158,6 +169,9 @@ import Observation
     private func save(_ value: Any, _ key: String) { defaults.set(value, forKey: key) }
 
     enum Keys {
+        static let readingPaper = "ayar.lesepapier"
+        static let showTranslationInReader = "ayar.mealImLeser"
+        static let bookTranscription = "ayar.buchTranskription"
         static let appearance = "ayar.gorunum"
         static let largeAndSimple = "ayar.buyukVeSade"
         static let tabs = "ayar.sekmeler"

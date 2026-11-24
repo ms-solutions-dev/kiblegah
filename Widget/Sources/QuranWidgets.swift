@@ -58,7 +58,10 @@ struct QuranWidget: Widget {
         }
         .configurationDisplayName(Text(app: "widget.kuran.ad"))
         .description(Text(app: "widget.kuran.aciklama"))
-        .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular])
+        .supportedFamilies([
+            .systemSmall, .systemMedium, .systemLarge, .systemExtraLarge, .accessoryRectangular,
+            .accessoryCircular,
+        ])
     }
 }
 
@@ -98,6 +101,14 @@ struct QuranView: View {
         switch family {
         case .accessoryRectangular: rows(h, o)
         case .accessoryCircular: ringView(o)
+        case .systemLarge, .systemExtraLarge:
+            PadQuranWidget(
+                date: g.date,
+                goal: h.map {
+                    PadQuranGoal(
+                        surah: $0.surah, verse: $0.verse, title: $0.title, bottom: $0.bottom,
+                        isPlaying: $0.isPlaying)
+                }, reading: o, extraLarge: family == .systemExtraLarge)
         case .systemMedium:
             HStack(spacing: 14) {
                 sol(h, o, intermediate: true)
@@ -264,7 +275,7 @@ struct VerseWidget: Widget {
         }
         .configurationDisplayName(Text(app: "widget.ayet.ad"))
         .description(Text(app: "widget.ayet.aciklama"))
-        .supportedFamilies([.systemMedium, .accessoryRectangular])
+        .supportedFamilies([.systemMedium, .systemLarge, .systemExtraLarge, .accessoryRectangular])
     }
 }
 
@@ -274,7 +285,9 @@ struct VerseView: View {
 
     var body: some View {
         if let a = g.verse {
-            if family == .accessoryRectangular {
+            if family == .systemLarge || family == .systemExtraLarge {
+                PadVerseWidget(verse: a, extraLarge: family == .systemExtraLarge)
+            } else if family == .accessoryRectangular {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: a.title).font(.caption.weight(.semibold))
                     Text(verbatim: a.translation).font(.caption).lineLimit(3)

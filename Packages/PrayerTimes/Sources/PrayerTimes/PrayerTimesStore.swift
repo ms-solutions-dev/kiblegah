@@ -47,8 +47,11 @@ public actor PrayerTimesStore {
         // picks up an improved method immediately instead of only after 25 days.
         let calculatedOnly = location.diyanetDistrict == nil && old?.source == .calculated
         if !force, samePlace, enough, !calculatedOnly, !(diyanetExpected && !recent) { return old }
+        // From yesterday on: between midnight and İmsak the current time is still yesterday's Yatsı, and
+        // without that day its start fell back to 0:00 (iPad, 24.11.).
         guard
-            let yeni = try? await source.table(location: location, start: today, dayCount: Self.targetDay + 5)
+            let yeni = try? await source.table(
+                location: location, start: today.added(-1), dayCount: Self.targetDay + 6)
         else { return old }
         // Calculated days only extend a Diyanet table of the same location at the end.
         let result =

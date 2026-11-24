@@ -19,8 +19,78 @@ struct OnboardingScreen: View {
     @Environment(\.openURL) private var open
     @State private var step: Step = .welcome
     @State private var pickCity = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
+        if PadLayout.isPad, sizeClass == .regular {
+            padBody
+        } else {
+            phoneBody
+        }
+    }
+
+    /// iPad (boards G19, G20): next to the steps the sky with the running clock.
+    private var padBody: some View {
+        GeometryReader { g in
+            let tall = g.size.height > g.size.width
+            let layout = tall ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
+            layout {
+                PadOnboardingSky(progress: stepProgress)
+                    .frame(
+                        width: tall ? nil : g.size.width * 0.535,
+                        height: tall ? g.size.height * 0.36 : nil)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        HStack(spacing: 6) {
+                            ForEach(0..<4, id: \.self) { i in
+                                Capsule().fill(i == stepIndex ? theme.colors.accent : theme.colors.surface2)
+                                    .frame(width: i == stepIndex ? 28 : 10, height: 10)
+                            }
+                        }
+                        .accessibilityHidden(true)
+                        if step == .welcome, !tall {
+                            Image(AppIcon.heartCompass.previewName, bundle: .main)
+                                .resizable()
+                                .frame(width: 72, height: 72)
+                                .clipShape(.rect(cornerRadius: 18))
+                                .shadow(color: .black.opacity(0.2), radius: 8, y: 2)
+                                .accessibilityHidden(true)
+                        }
+                        switch step {
+                        case .welcome: welcome
+                        case .location: location
+                        case .notification: notification
+                        case .mushaf: mushaf
+                        }
+                    }
+                    .frame(maxWidth: tall ? nil : 460, alignment: .leading)
+                    .padding(.horizontal, tall ? 60 : 40).padding(.vertical, tall ? 28 : 40)
+                    .frame(
+                        maxWidth: .infinity, minHeight: tall ? nil : g.size.height,
+                        alignment: tall ? .top : .leading)
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .pageBackground()
+        .sheet(isPresented: $pickCity, onDismiss: { if settings.location != nil { step = .notification } }) {
+            LocationPickerScreen()
+        }
+        .interactiveDismissDisabled()
+    }
+
+    private var stepIndex: Int {
+        switch step {
+        case .welcome: 0
+        case .location: 1
+        case .notification: 2
+        case .mushaf: 3
+        }
+    }
+
+    private var stepProgress: CGFloat { CGFloat(stepIndex) / 3 }
+
+    private var phoneBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 switch step {

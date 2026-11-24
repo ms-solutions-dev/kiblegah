@@ -36,6 +36,8 @@ struct ReaderScreen: View {
     @Environment(Router.self) private var direction
     @Environment(AudioStore.self) private var audioStore
     let start: ContentKey
+    /// iPad: the host holds selection, position and detail; bars and sheets of this page stay out.
+    var pad: PadReaderLink? = nil
     /// Jump via the title page (): replaces the entry point without stacking a new screen.
     @State private var pendingJump: ContentKey?
     @State private var goOpen = false
@@ -112,9 +114,9 @@ struct ReaderScreen: View {
             let translations = activeTranslations(contentProvider, settings)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    kafa(translations: translations)
+                    if pad == nil || settings.wordByWord { kafa(translations: translations) }
                     if juzNumber == nil {
-                        SurahHeader(surah: surah)
+                        SurahHeader(surah: surah, bandOnly: pad != nil)
                         basmala(surah, contentProvider)
                     }
                     ForEach(verses) { a in
@@ -134,23 +136,25 @@ struct ReaderScreen: View {
                             verse: a, translations: translations,
                             wordMeanings: wordMeanings[a.surah]?[a.verse]
                         )
-                        .background(isPlaying(a) || light == a.index ? theme.colors.surface2 : .clear)
+                        .padding(.horizontal, pad == nil ? 0 : 20)
+                        .background { rowBackground(a) }
                         .overlay(alignment: .leading) {
-                            if isPlaying(a) || light == a.index {
+                            if pad == nil, isPlaying(a) || light == a.index {
                                 Rectangle().fill(theme.colors.accent).frame(width: 4).offset(x: -10)
                             }
                         }
                         .id(a.index)
                         .contentShape(.rect)
-                        .onTapGesture { selected = a }
+                        .onTapGesture { select(a) }
                         .accessibilityAddTraits(.isButton)
-                        .accessibilityAction(named: localized("kuran.ayet.islemler")) { selected = a }
-                        Divider().overlay(theme.colors.line)
+                        .accessibilityAction(named: localized("kuran.ayet.islemler")) { select(a) }
+                        if pad == nil { Divider().overlay(theme.colors.line) }
                     }
                 }
                 .scrollTargetLayout()
-                .padding(.horizontal, 16)
+                .padding(.horizontal, pad == nil ? 16 : 12)
             }
+            .contentMargins(.bottom, pad == nil ? 0 : 90, for: .scrollContent)
             .scrollPosition(id: $visible, anchor: .top)
             // Scrolled manually (not our scrolling along): following paused, no surah change either.
             .onScrollPhaseChange { _, y in
@@ -164,11 +168,18 @@ struct ReaderScreen: View {
                             follow(s, surah: surah, verses: verses, contentProvider: contentProvider)
                         }
                     }
+                    .padding(.bottom, pad == nil ? 0 : 84)
                 }
             }
-            .safeAreaInset(edge: .bottom) { PlayerBar() }
-            .overlay(alignment: .top) { topGradient }
-            .overlay(alignment: .topTrailing) { pageMargin(contentProvider, surah) }
+            .safeAreaInset(edge: .bottom) {
+                if pad == nil, !PadLayout.isPad { PlayerBar() }
+            }
+            .overlay(alignment: .top) {
+                if pad == nil { topGradient }
+            }
+            .overlay(alignment: .topTrailing) {
+                if pad == nil { pageMargin(contentProvider, surah) }
+            }
             .onGeometryChange(for: CGFloat.self, of: { $0.safeAreaInsets.top }) { topInset = $0 }
             .sheet(item: $readingVerse) { ReadingOptions(verse: $0) }
             .onChange(of: player.current) { _, s in
@@ -180,12 +191,12 @@ struct ReaderScreen: View {
             #if DEBUG
                 .task { await followCheck(player, contentProvider) { following = false } }
             #endif
-            .pageBackground()
-            .navigationTitle(
-                juzNumber.map { localized("kuran.cuz.no \($0)") }
-                    ?? surah.name(language: translationLanguage())
+            .modifier(
+                ReaderChrome(
+                    isPad: pad != nil,
+                    title: juzNumber.map { localized("kuran.cuz.no \($0)") }
+                        ?? surah.name(language: translationLanguage()))
             )
-            .smallTitle()
             .sheet(isPresented: $goOpen) {
                 MushafJumpSheet(current: mushafPage(contentProvider, surah), edition: .v1, git: { _ in }) {
                     goal in
@@ -193,58 +204,60 @@ struct ReaderScreen: View {
                 }
             }
             .toolbar {
-                // Title as a button as in the Mushaf: directly to surah/verse, juz or page.
-                ToolbarItem(placement: .principal) {
-                    Button {
-                        goOpen = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(
-                                verbatim: juzNumber.map { localized("kuran.cuz.no \($0)") }
-                                    ?? surah.name(language: translationLanguage())
-                            )
-                            .font(.headline).lineLimit(1)
-                            Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-                                .foregroundStyle(theme.colors.text2)
-                        }
-                        .foregroundStyle(theme.colors.text)
-                    }
-                    .accessibilityHint(localized("kuran.mushaf.git.ipucu"))
-                }
-                // Straight into the Mushaf, without the menu.
-                ToolbarItem(placement: .primaryAction) {
-                    NavigationLink(value: Goal.mushaf(mushafPage(contentProvider, surah))) {
-                        Image(systemName: "book.pages")
-                    }
-                    .accessibilityLabel(localized("kuran.mushaf"))
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        listen(surah, contentProvider: contentProvider)
-                    } label: {
-                        Image(systemName: "play.fill")
-                    }
-                    .accessibilityLabel(localized("kuran.oynatici.dinle"))
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        // Plugin entries for the verse currently at the top.
-                        if let k = contentProvider.key(index: visible ?? surah.firstIndex) {
-                            SlotView(.verseMenuAction(k))
-                        }
+                if pad == nil {
+                    // Title as a button as in the Mushaf: directly to surah/verse, juz or page.
+                    ToolbarItem(placement: .principal) {
                         Button {
-                            settingOpen = true
+                            goOpen = true
                         } label: {
-                            Label(localized("kuran.okuma_ayarlari"), systemImage: "textformat.size")
+                            HStack(spacing: 4) {
+                                Text(
+                                    verbatim: juzNumber.map { localized("kuran.cuz.no \($0)") }
+                                        ?? surah.name(language: translationLanguage())
+                                )
+                                .font(.headline).lineLimit(1)
+                                Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                                    .foregroundStyle(theme.colors.text2)
+                            }
+                            .foregroundStyle(theme.colors.text)
                         }
-                        downloadButton(surah)
-                        NavigationLink(value: Goal.downloaded) {
-                            Label(localized("kuran.indirilenler"), systemImage: "arrow.down.circle")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
+                        .accessibilityHint(localized("kuran.mushaf.git.ipucu"))
                     }
-                    .accessibilityLabel(localized("kuran.daha_fazla"))
+                    // Straight into the Mushaf, without the menu.
+                    ToolbarItem(placement: .primaryAction) {
+                        NavigationLink(value: Goal.mushaf(mushafPage(contentProvider, surah))) {
+                            Image(systemName: "book.pages")
+                        }
+                        .accessibilityLabel(localized("kuran.mushaf"))
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            listen(surah, contentProvider: contentProvider)
+                        } label: {
+                            Image(systemName: "play.fill")
+                        }
+                        .accessibilityLabel(localized("kuran.oynatici.dinle"))
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            // Plugin entries for the verse currently at the top.
+                            if let k = contentProvider.key(index: visible ?? surah.firstIndex) {
+                                SlotView(.verseMenuAction(k))
+                            }
+                            Button {
+                                settingOpen = true
+                            } label: {
+                                Label(localized("kuran.okuma_ayarlari"), systemImage: "textformat.size")
+                            }
+                            downloadButton(surah)
+                            NavigationLink(value: Goal.downloaded) {
+                                Label(localized("kuran.indirilenler"), systemImage: "arrow.down.circle")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .accessibilityLabel(localized("kuran.daha_fazla"))
+                    }
                 }
             }
             .sheet(item: $selected, onDismiss: { light = nil }) { a in
@@ -294,7 +307,17 @@ struct ReaderScreen: View {
                     }
                 #endif
             }
+            .onChange(of: pad?.jump.wrappedValue) { _, k in
+                guard let k else { return }
+                pad?.jump.wrappedValue = nil
+                if case .verse(let s, let n) = k, let su = contentProvider.surah(s), s == surah.number {
+                    withAnimation { visible = su.firstIndex + n - 1 }
+                } else {
+                    skipTo(k, contentProvider)
+                }
+            }
             .onChange(of: visible) { _, yeni in
+                pad?.visible.wrappedValue = yeni
                 guard let yeni, let k = contentProvider.key(index: yeni) else { return }
                 QuranPosition.shared.save(yeni, .scrollProxy)
                 store.saveLastPosition(k.text, khatm: settings.activeKhatm)
@@ -328,8 +351,10 @@ struct ReaderScreen: View {
     /// free on the right, so even two translations or a two-line hint do not disappear under it.
     private func kafa(translations: [PackManifest]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(app: "kuran.meal_kaynagi \(translations.map(\.title).joined(separator: ", "))")
-                .typography(.footnote).foregroundStyle(theme.colors.text2)
+            if pad == nil {
+                Text(app: "kuran.meal_kaynagi \(translations.map(\.title).joined(separator: ", "))")
+                    .typography(.footnote).foregroundStyle(theme.colors.text2)
+            }
             if settings.wordByWord {
                 Text(
                     app: wordLanguage(contentProvider, settings) == "de"
@@ -350,6 +375,34 @@ struct ReaderScreen: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
                 .accessibilityLabel(localized("kuran.besmele"))
+        }
+    }
+
+    private func select(_ a: Verse) {
+        if let pad { pad.selection.wrappedValue = a } else { selected = a }
+    }
+
+    /// iPhone: a band. iPad: a rounded row, heard softly tinted, selected with an outline (boards G07, G12).
+    @ViewBuilder private func rowBackground(_ a: Verse) -> some View {
+        if let pad {
+            let chosen = pad.selection.wrappedValue?.index == a.index
+            RoundedRectangle(cornerRadius: 20)
+                .fill(
+                    isPlaying(a)
+                        ? theme.colors.accent.opacity(0.16)
+                        : chosen ? theme.colors.accent.opacity(0.06) : .clear
+                )
+                .overlay {
+                    if chosen {
+                        RoundedRectangle(cornerRadius: 20).strokeBorder(
+                            theme.colors.accent.opacity(0.55), lineWidth: 1.5)
+                    }
+                }
+                .padding(.vertical, 2)
+                .animation(.easeInOut(duration: 0.4), value: isPlaying(a))
+                .animation(.easeInOut(duration: 0.3), value: chosen)
+        } else {
+            isPlaying(a) || light == a.index ? theme.colors.surface2 : .clear
         }
     }
 
@@ -476,12 +529,17 @@ struct VerseCell: View {
     let verse: Verse
     let translations: [PackManifest]
     var wordMeanings: [WordMeaning]? = nil
+    @Environment(\.padReaderStyle) private var padStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(verbatim: "\(verse.surah):\(verse.verse)").typography(.footnote).monospacedDigit()
-                    .foregroundStyle(theme.colors.text2)
+                    .foregroundStyle(padStyle ? theme.colors.label : theme.colors.text2)
+                    .fontWeight(padStyle ? .semibold : .regular)
+                    .padding(.horizontal, padStyle ? 10 : 0)
+                    .padding(.vertical, padStyle ? 6 : 0)
+                    .background(padStyle ? theme.colors.surface2 : .clear, in: .capsule)
                 // Page marker at the first verse of each Mushaf page and at the start of a surah (variant C).
                 if verse.verse == 1 || contentProvider?.page(verse.page)?.firstIndex == verse.index {
                     Text(app: "kuran.sayfa.kisa \(verse.page)").typography(.footnote).monospacedDigit()
@@ -531,7 +589,7 @@ struct VerseCell: View {
                 )
                 .foregroundStyle(theme.colors.text2)
             }
-            ForEach(translations) { m in
+            ForEach(padStyle && !settings.showTranslationInReader ? [] : translations) { m in
                 if let text = contentProvider?.translation(verse.key, pack: m.id) {
                     VStack(alignment: .leading, spacing: 2) {
                         if translations.count > 1 {
@@ -700,22 +758,40 @@ struct SurahBand: View {
 struct SurahHeader: View {
     @Environment(\.theme) private var theme
     let surah: Surah
+    /// iPad: name and count stand in the head of the column already.
+    var bandOnly = false
 
     var body: some View {
         VStack(spacing: 8) {
             SurahBand(nameArabic: surah.nameArabic, height: 46)
-            VStack(spacing: 2) {
-                Text(verbatim: surah.name(language: translationLanguage())).typography(.emphasized)
-                Text(
-                    app: surahHeader(surah)
-                )
-                .typography(.footnote).foregroundStyle(theme.colors.text2)
+            if !bandOnly {
+                VStack(spacing: 2) {
+                    Text(verbatim: surah.name(language: translationLanguage())).typography(.emphasized)
+                    Text(
+                        app: surahHeader(surah)
+                    )
+                    .typography(.footnote).foregroundStyle(theme.colors.text2)
+                }
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 28)
+        .padding(.top, bandOnly ? 12 : 28)
         .padding(.bottom, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// On the iPhone the reader is a page of its own; on the iPad its host draws background and title.
+private struct ReaderChrome: ViewModifier {
+    let isPad: Bool
+    let title: String
+
+    func body(content: Content) -> some View {
+        if isPad {
+            content
+        } else {
+            content.pageBackground().navigationTitle(title).smallTitle()
+        }
     }
 }

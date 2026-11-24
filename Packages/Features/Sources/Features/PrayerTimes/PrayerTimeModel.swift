@@ -65,7 +65,11 @@ import UserData
     /// At launch and when returning to the app.
     public func start(_ settings: AppSettings) async {
         let d = prepareStore(settings)
-        if table == nil { table = await d.stored() }
+        if table == nil {
+            table = await d.stored()
+            // The stock is enough for the widget; it does not have to wait for the refresh.
+            if let table { WidgetWriter.save(table, settings: settings) }
+        }
         if let k = settings.location { await refresh(k, settings: settings) }
         // No system prompt before onboarding: there a custom screen explains first.
         if settings.onboardingDone, settings.automaticLocation, locationService.status != .noPermission {
@@ -91,9 +95,11 @@ import UserData
         isLoading = true
         defer { isLoading = false }
         table = await prepareStore(settings).update(location: location, force: force)
+        // Widget first: religious days and notifications may wait on the network (home server behind a
+        // VPN), and the widget stayed empty until they were done (iPad, 24.11.).
+        if let table { WidgetWriter.save(table, settings: settings) }
         await loadReligiousDays(settings)
         await notification.schedule(table: table, settings: settings)
-        if let table { WidgetWriter.save(table, settings: settings) }
     }
 
     private func loadReligiousDays(_ settings: AppSettings) async {
@@ -118,7 +124,14 @@ import UserData
         if requested {
             await selectLocation(yeni, settings: settings, automatic: true)
         } else if let old = settings.location {
-            if old.distance(yeni) > Self.locationChangeMeters { suggestedLocation = yeni }
+            if old.distance(yeni) > Self.locationChangeMeters {
+                suggestedLocation = yeni
+            } else if settings.automaticLocation, Self.isCoordinateName(old.name),
+                !Self.isCoordinateName(yeni.name)
+            {
+                // Earlier the place name was missing („50.15, 11.08“); the same place with a name takes over.
+                await selectLocation(yeni, settings: settings, automatic: true)
+            }
         } else {
             settings.location = yeni
             await refresh(yeni, settings: settings, force: true)
@@ -134,6 +147,11 @@ import UserData
     }
 
     func dismissSuggestion() { suggestedLocation = nil }
+
+    /// The stand-in name of `LocationService` when no place name came: „50.15, 11.08“.
+    nonisolated static func isCoordinateName(_ name: String) -> Bool {
+        name.wholeMatch(of: /-?\d{1,3}\.\d{2}, -?\d{1,3}\.\d{2}/) != nil
+    }
 
     /// For the theme „vakte göre“: between Maghrib and Sunrise it is night.
     public func isNight(_ time: Date = .now) -> Bool {

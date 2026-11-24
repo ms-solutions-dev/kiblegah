@@ -14,6 +14,10 @@ public enum Typography {
     case footnote
     /// Arabic Quran and dua text.
     case arabic(size: CGFloat)
+    /// Large numbers and headings at a size of their own (iPad hero and cards).
+    case display(size: CGFloat)
+    /// Interface text at a size of its own (iPad labels).
+    case label(size: CGFloat)
 
     func font(simple: Bool) -> Font {
         let serif = simple ? Typography.sans : Typography.serif
@@ -26,6 +30,9 @@ public enum Typography {
         case .secondary: return .custom(Typography.sans, size: 15, relativeTo: .subheadline)
         case .footnote: return .custom(Typography.sans, size: 13, relativeTo: .footnote)
         case .arabic(let size): return .custom(Typography.arabicName, size: size, relativeTo: .title)
+        case .display(let size): return .custom(serif, size: size, relativeTo: .title).weight(.semibold)
+        case .label(let size):
+            return .custom(Typography.sans, size: size, relativeTo: .subheadline).weight(.semibold)
         }
     }
 

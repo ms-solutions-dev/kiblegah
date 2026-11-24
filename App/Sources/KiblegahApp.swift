@@ -164,6 +164,9 @@ struct KiblegahApp: App {
     var body: some Scene {
         WindowGroup {
             ThemedRoot()
+                #if DEBUG
+                    .modifier(WidgetGallery(contentProvider: contentProvider))
+                #endif
                 .environment(settings)
                 .environment(router)
                 .environment(prayerTimes)

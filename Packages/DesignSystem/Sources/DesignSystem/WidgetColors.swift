@@ -26,6 +26,11 @@ public enum WidgetColor {
         .custom(Typography.sans, fixedSize: size).weight(weight)
     }
 
+    /// Fraunces for the large numbers of the iPad widgets, fixed size like `font`.
+    public static func serif(_ size: CGFloat, _ weight: Font.Weight = .semibold) -> Font {
+        .custom(Typography.serif, fixedSize: size).weight(weight)
+    }
+
     static func pair(_ light: UInt32, _ dark: UInt32) -> Color {
         #if canImport(UIKit)
             Color(

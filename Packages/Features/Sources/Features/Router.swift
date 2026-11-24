@@ -73,8 +73,18 @@ public struct PluginGoal: Hashable, Sendable {
 /// Each tab has its own stack; "Zurück" therefore always stays in the caller's tab and
 /// never leads into another one.
 @MainActor @Observable public final class Router {
-    public var selected: AppTab = .prayerTimes
+    public var selected: AppTab = .prayerTimes {
+        didSet { padPlugin = nil }
+    }
     public var path: [AppTab: [Goal]] = [:]
+    /// iPad: every area sits in the sidebar, so no destination has to fall back to Keşfet.
+    public var showsAllAreas = false
+    /// iPad: the sidebar row of a plugin that is currently selected (Bibliothek, KI).
+    public var padPlugin: String?
+    /// iPad: Ayarlar is a sheet above the current area.
+    public var padSettingsOpen = false
+    /// iPad: a verse the Quran area should scroll to, without stacking a second reader.
+    public var padQuranJump: ContentKey?
     /// Which areas the app target ships with; destinations of other areas land in Keşfet.
     @ObservationIgnored private let tabFilter: @MainActor (AppTab) -> Bool
     /// Links the plugins understand (path components of `kiblegah://…`).
@@ -86,15 +96,27 @@ public struct PluginGoal: Hashable, Sendable {
     ) {
         self.tabFilter = tabFilter
         self.routes = routes
+        showsAllAreas = PadLayout.isPad
     }
 
     /// The saved tabs, as this app target shows them.
     private func visible(_ tabs: [AppTab]) -> [AppTab] {
-        AppTab.normalized(tabs, allowed: tabFilter)
+        if showsAllAreas { return AppTab.allCases.filter { $0 != .discover && tabFilter($0) } }
+        return AppTab.normalized(tabs, allowed: tabFilter)
     }
 
     /// Opens a destination. If its area is not a tab, it lands in the stack of Keşfet.
     public func open(_ goal: Goal, tabs: [AppTab]) {
+        if showsAllAreas, goal == .settings {
+            padSettingsOpen = true
+            return
+        }
+        if showsAllAreas, case .verse(let k) = goal {
+            selected = .quran
+            path[.quran] = []
+            padQuranJump = k
+            return
+        }
         let tabs = visible(tabs)
         let area = Router.area(goal)
         let tab = tabs.contains(area) ? area : .discover

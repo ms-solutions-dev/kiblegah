@@ -15,7 +15,7 @@ import UserData
 /// next verse with content in the open tab (hadith, own note, bookmarked). „Im
 /// Zusammenhang lesen“ closes the sheet and scrolls the reader to the verse just shown.
 struct VerseSheet: View {
-    enum SheetTab: Hashable { case translation, tafsir, hadith, tajweed, note }
+    enum SheetTab: Hashable { case translation, tafsir, hadith, tajweed, note, pageTranslation }
 
     @Environment(\.contentProvider) private var contentProvider
     @Environment(AppSettings.self) private var settings
@@ -39,8 +39,23 @@ struct VerseSheet: View {
     @State private var contextOpen = false
     @State private var similarOpen = false
 
-    init(verse: Verse, changed: ((Verse) -> Void)? = nil, readInContext: ((Verse) -> Void)? = nil) {
+    /// iPad: inside a column or a card instead of a sheet. The verse then follows the selection in the reader.
+    var embedded = false
+    var closeEmbedded: () -> Void = {}
+    /// In the book: the verses of the open pages for „Meal der Seite“.
+    var pageVerses: [Verse] = []
+    private let incoming: Verse
+
+    init(
+        verse: Verse, embedded: Bool = false, closeEmbedded: @escaping () -> Void = {},
+        pageVerses: [Verse] = [],
+        changed: ((Verse) -> Void)? = nil, readInContext: ((Verse) -> Void)? = nil
+    ) {
         _verse = State(initialValue: verse)
+        incoming = verse
+        self.embedded = embedded
+        self.closeEmbedded = closeEmbedded
+        self.pageVerses = pageVerses
         self.changed = changed
         self.readInContext = readInContext
     }
@@ -52,14 +67,37 @@ struct VerseSheet: View {
     @State private var hasSunnah = false
     @State private var tafsirSource = GroupDefaults.d.string(forKey: "tefsir.kaynak") ?? "muhtasar"
 
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(verbatim: verse.text)
-                        .typography(.arabic(size: settings.arabicSize))
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
+    /// The tabs this verse has content for: the same conditions as the segmented control.
+    private var availableTabs: [SheetTab] {
+        var l: [SheetTab] = [.translation]
+        if !(contentProvider?.tafsir(verse.key, language: tafsirLanguage(settings)).isEmpty ?? true) {
+            l.append(.tafsir)
+        }
+        if !(contentProvider?.verseHadiths(verse.key, language: translationLanguage()).isEmpty ?? true)
+            || hasSunnah
+        {
+            l.append(.hadith)
+        }
+        if !(contentProvider?.tajweed(verse.key).isEmpty ?? true) { l.append(.tajweed) }
+        l.append(.note)
+        if !pageVerses.isEmpty { l.append(.pageTranslation) }
+        return l
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(verbatim: verse.text)
+                    .typography(.arabic(size: embedded ? min(settings.arabicSize, 26) : settings.arabicSize))
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                if embedded {
+                    PadVerseTabs(selection: $reiter, tabs: availableTabs)
+                        .background {
+                            SlotView(.verseHadithProbe("\(verse.surah):\(verse.verse)")).hidden()
+                                .environment(\.verseHadithNotice, VerseHadithNotice { hasSunnah = $0 })
+                        }
+                } else {
                     Picker(localized("kuran.ayet.reiter"), selection: $reiter) {
                         Text(app: "kuran.ayet.meal").tag(SheetTab.translation)
                         if !(contentProvider?.tafsir(verse.key, language: tafsirLanguage(settings)).isEmpty
@@ -82,49 +120,48 @@ struct VerseSheet: View {
                         SlotView(.verseHadithProbe("\(verse.surah):\(verse.verse)")).hidden()
                             .environment(\.verseHadithNotice, VerseHadithNotice { hasSunnah = $0 })
                     }
-                    switch reiter {
-                    case .translation: translation
-                    case .tafsir: tafsir
-                    case .hadith:
-                        ForEach(
-                            contentProvider?.verseHadiths(verse.key, language: translationLanguage()) ?? []
-                        ) { h in
-                            NavigationLink(value: Goal.hadithDetail(h.identifier)) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(verbatim: h.title).typography(.emphasized).multilineTextAlignment(
-                                        .leading)
-                                    Text(verbatim: "\(h.source) · \(h.degrees)").typography(.footnote)
-                                        .foregroundStyle(
-                                            theme.colors.text2)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(14)
-                                .background(theme.colors.surface, in: .rect(cornerRadius: 16))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        SlotView(.verseHadiths("\(verse.surah):\(verse.verse)"))
-                    case .tajweed:
-                        let t = contentProvider?.tajweed(verse.key) ?? []
-                        Text(tajweedText(verse.text, spans: t, dark: theme.colors.dark))
-                            .typography(.arabic(size: settings.arabicSize))
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        TajweedLegend(
-                            rules: TajweedColors.rules.filter { k in t.contains { $0.rule == k } })
-                    case .note: noteEditor
-                    }
-                    actions
                 }
-                .padding(20)
+                switch reiter {
+                case .translation: translation
+                case .tafsir: tafsir
+                case .hadith:
+                    ForEach(
+                        contentProvider?.verseHadiths(verse.key, language: translationLanguage()) ?? []
+                    ) { h in
+                        NavigationLink(value: Goal.hadithDetail(h.identifier)) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(verbatim: h.title).typography(.emphasized).multilineTextAlignment(
+                                    .leading)
+                                Text(verbatim: "\(h.source) · \(h.degrees)").typography(.footnote)
+                                    .foregroundStyle(
+                                        theme.colors.text2)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14)
+                            .background(theme.colors.surface, in: .rect(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    SlotView(.verseHadiths("\(verse.surah):\(verse.verse)"))
+                case .tajweed:
+                    let t = contentProvider?.tajweed(verse.key) ?? []
+                    Text(tajweedText(verse.text, spans: t, dark: theme.colors.dark))
+                        .typography(.arabic(size: settings.arabicSize))
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                    TajweedLegend(
+                        rules: TajweedColors.rules.filter { k in t.contains { $0.rule == k } })
+                case .note: noteEditor
+                case .pageTranslation: pageTranslation
+                }
+                if reiter != .pageTranslation { actions }
             }
-            .pageBackground()
-            .navigationTitle(title)
-            .smallTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(localized("genel.kapat")) { close() } }
-            }
-            .navigationDestination(for: Goal.self) { GoalScreen(goal: $0) }
+            .padding(embedded ? 16 : 20)
+        }
+    }
+
+    private func common<V: View>(_ v: V) -> some View {
+        v
             .safeAreaInset(edge: .bottom) { navBar }
             // Swiping horizontally pages like the arrows: left goes to the next verse ().
             .simultaneousGesture(
@@ -137,12 +174,54 @@ struct VerseSheet: View {
                 }
             )
             .onChange(of: verse.index, initial: true) { changed?(verse) }
+            .onChange(of: incoming.index) { _, n in
+                if embedded, n != verse.index { git(contentProvider?.key(index: n)) }
+            }
             .onAppear { note = store.note(verse.key.text)?.metin ?? "" }
             .onDisappear { store.saveNote(verse.key.text, text: note) }
+    }
+
+    var body: some View {
+        if embedded {
+            VStack(spacing: 0) {
+                HStack {
+                    Text(app: "ipad.koran.vers_ref \(verse.surah) \(verse.verse)")
+                        .typography(.label(size: 13)).textCase(.uppercase).tracking(1.1)
+                        .foregroundStyle(theme.colors.label)
+                    Spacer()
+                    Button(action: closeEmbedded) {
+                        Image(systemName: "chevron.right").font(.system(size: 15, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .background(theme.colors.surface2, in: .circle)
+                            .contentShape(.circle)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(localized("genel.kapat"))
+                }
+                .padding(.horizontal, 16).padding(.top, 14)
+                common(content)
+            }
+            .foregroundStyle(theme.colors.text)
+            .pluginWrapper()
+        } else {
+            NavigationStack {
+                common(
+                    content
+                        .pageBackground()
+                        .navigationTitle(title)
+                        .smallTitle()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button(localized("genel.kapat")) { close() }
+                            }
+                        }
+                        .navigationDestination(for: Goal.self) { GoalScreen(goal: $0) }
+                )
+            }
+            // The book reader from the tafsir tab hangs off the root of the sheet, not off the section ().
+            .pluginWrapper()
+            .presentationDetents([.medium, .large])
         }
-        // The book reader from the tafsir tab hangs off the root of the sheet, not off the section ().
-        .pluginWrapper()
-        .presentationDetents([.medium, .large])
     }
 
     /// Change of the verse shown: save the note, load the new one, keep the tab if it exists.
@@ -187,6 +266,32 @@ struct VerseSheet: View {
             backward
             ? orderedKeys.filter { $0 < verse.index }.max() : orderedKeys.filter { $0 > verse.index }.min()
         return goal.flatMap { contentProvider.key(index: $0) }
+    }
+
+    /// The translations of the open pages as a list; a tap goes to that verse.
+    @ViewBuilder private var pageTranslation: some View {
+        if let contentProvider, let pack = activeTranslations(contentProvider, settings).first {
+            ForEach(pageVerses) { v in
+                Button {
+                    git(v.key)
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: "\(v.surah):\(v.verse)").typography(.label(size: 11))
+                            .tracking(0.9).foregroundStyle(theme.colors.label)
+                        Text(verbatim: contentProvider.translation(v.key, pack: pack.id)?.text ?? "")
+                            .typography(.secondary).multilineTextAlignment(.leading)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(8)
+                    .background(
+                        v.index == verse.index ? theme.colors.accent.opacity(0.12) : .clear,
+                        in: .rect(cornerRadius: 12)
+                    )
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     private var neighborName: String {
@@ -302,6 +407,7 @@ struct VerseSheet: View {
                 .padding(.top, 8)
             }
             .tint(theme.colors.accent)
+            .multilineTextAlignment(.leading)
             similar(contentProvider)
             Text(app: "kuran.ayet.meal_ipucu").typography(.footnote).foregroundStyle(theme.colors.text2)
             Text(app: "kuran.ayet.konum \(verse.page) \(verse.juz)").typography(.footnote).foregroundStyle(
@@ -583,5 +689,41 @@ public struct ActionTile: LabelStyle {
         .contentShape(.rect)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel { _ in configuration.title }
+    }
+}
+
+/// The tabs of the verse detail as pills (board G07): at least 44 pt high, they wrap in the narrow column.
+struct PadVerseTabs: View {
+    @Environment(\.theme) private var theme
+    @Binding var selection: VerseSheet.SheetTab
+    let tabs: [VerseSheet.SheetTab]
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 2)], alignment: .leading, spacing: 2) {
+            ForEach(tabs, id: \.self) { t in
+                Button {
+                    selection = t
+                } label: {
+                    Text(app: title(t)).typography(.label(size: 14)).lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .foregroundStyle(selection == t ? theme.colors.onAccent : theme.colors.text2)
+                        .background(selection == t ? theme.colors.accent : .clear, in: .capsule)
+                        .contentShape(.capsule)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selection == t ? .isSelected : [])
+            }
+        }
+    }
+
+    private func title(_ t: VerseSheet.SheetTab) -> LocalizedStringKey {
+        switch t {
+        case .translation: "kuran.ayet.meal"
+        case .tafsir: "kuran.ayet.tefsir"
+        case .hadith: "kuran.ayet.hadis"
+        case .tajweed: "kuran.ayet.tecvid"
+        case .note: "kuran.ayet.notum"
+        case .pageTranslation: "ipad.buch.meal_der_seite"
+        }
     }
 }

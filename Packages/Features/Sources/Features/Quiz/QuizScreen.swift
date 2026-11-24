@@ -15,6 +15,13 @@ struct QuizScreen: View {
     @Environment(UserStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @State private var areas = QuizAreas()
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var size = CGSize.zero
+
+    /// iPad in landscape (board G16): the daily round as a large card, everything else next to it.
+    private var wide: Bool {
+        PadLayout.isPad && sizeClass == .regular && size.width >= 860 && size.width > size.height
+    }
 
     var body: some View {
         let _ = store.version
@@ -22,10 +29,17 @@ struct QuizScreen: View {
         Group {
             if theme.largeAndSimple {
                 list(d)
+            } else if wide {
+                HStack(alignment: .top, spacing: 16) {
+                    PadQuizHero(d: d).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ring(d, showsDay: false).frame(width: size.width * 0.44)
+                }
+                .padding([.leading, .bottom], 16)
             } else {
-                ring(d)
+                ring(d, showsDay: true)
             }
         }
+        .onGeometryChange(for: CGSize.self, of: \.size) { size = $0 }
         .pageBackground()
         .navigationTitle(Text(app: "sekme.quiz"))
         .task { await loadAreas() }
@@ -41,7 +55,7 @@ struct QuizScreen: View {
 
     // MARK: B · Halka
 
-    private func ring(_ d: QuizStatus) -> some View {
+    private func ring(_ d: QuizStatus, showsDay: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 if !settings.quizIntentionSeen { IntentionCard() }
@@ -59,7 +73,7 @@ struct QuizScreen: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
-                ReligiousDayCard(d: d)
+                if showsDay { ReligiousDayCard(d: d) } else { moreRows(d) }
                 LazyVGrid(
                     columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
                     spacing: 12
@@ -89,28 +103,7 @@ struct QuizScreen: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                VStack(spacing: 0) {
-                    row(
-                        .quizGame("tekrar"), icon: "arrow.counterclockwise",
-                        title: localized("quiz.tekrar"),
-                        bottom: d.repeatCount > 0
-                            ? localized("quiz.tekrar.bekliyor \(d.repeatCount)")
-                            : localized("quiz.tekrar.yok"),
-                        light: d.repeatCount > 0)
-                    Divider().padding(.leading, 56)
-                    row(
-                        .quizDuello, icon: "arrow.left.arrow.right", title: localized("quiz.duello"),
-                        bottom: d.duelloAlt)
-                    Divider().padding(.leading, 56)
-                    row(
-                        .quizPractice, icon: "slider.horizontal.3", title: localized("quiz.alistirma"),
-                        bottom: localized("quiz.alistirma.alt"))
-                    Divider().padding(.leading, 56)
-                    row(
-                        .quizHistory, icon: "chart.bar", title: localized("quiz.gecmis"),
-                        bottom: localized("quiz.gecmis.alt"))
-                }
-                .background(theme.colors.surface, in: .rect(cornerRadius: 22))
+                if showsDay { moreRows(d) }
             }
             .padding(16)
         }
@@ -118,6 +111,32 @@ struct QuizScreen: View {
             // Screenshots of the lower half (bank tiles, „onay bekliyor“): `-quizAsagi 1`.
             .defaultScrollAnchor(UserDefaults.standard.bool(forKey: "quizAsagi") ? .bottom : .top)
         #endif
+    }
+
+    /// Tekrar, Düello, Alıştırma, Geçmiş.
+    private func moreRows(_ d: QuizStatus) -> some View {
+        VStack(spacing: 0) {
+            row(
+                .quizGame("tekrar"), icon: "arrow.counterclockwise",
+                title: localized("quiz.tekrar"),
+                bottom: d.repeatCount > 0
+                    ? localized("quiz.tekrar.bekliyor \(d.repeatCount)")
+                    : localized("quiz.tekrar.yok"),
+                light: d.repeatCount > 0)
+            Divider().padding(.leading, 56)
+            row(
+                .quizDuello, icon: "arrow.left.arrow.right", title: localized("quiz.duello"),
+                bottom: d.duelloAlt)
+            Divider().padding(.leading, 56)
+            row(
+                .quizPractice, icon: "slider.horizontal.3", title: localized("quiz.alistirma"),
+                bottom: localized("quiz.alistirma.alt"))
+            Divider().padding(.leading, 56)
+            row(
+                .quizHistory, icon: "chart.bar", title: localized("quiz.gecmis"),
+                bottom: localized("quiz.gecmis.alt"))
+        }
+        .background(theme.colors.surface, in: .rect(cornerRadius: 22))
     }
 
     private func areaBox(_ a: QuizArea, counter: QuizCounter, repetition: Int) -> some View {
@@ -313,6 +332,70 @@ struct ReligiousDayCard: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.colors.surface, in: .rect(cornerRadius: 22))
+    }
+}
+
+/// The daily round as the large card of the iPad (board G16): the same states and the same goal as
+/// ``ReligiousDayCard``.
+struct PadQuizHero: View {
+    @Environment(\.theme) private var theme
+    let d: QuizStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(app: "quiz.gunun_turu").typography(.label(size: 13)).textCase(.uppercase).tracking(1.1)
+                .opacity(0.85)
+            Group {
+                if d.finished {
+                    Text(app: "quiz.puan \(d.kind?.puan ?? 0)")
+                } else if d.answeredCount > 0 {
+                    Text(app: "quiz.gunun_turu.durum \(d.answeredCount) \(d.length)")
+                } else {
+                    Text(app: "quiz.gunun_turu.baslamadin")
+                }
+            }
+            .typography(.display(size: 40))
+            Group {
+                if d.finished {
+                    Text(app: "quiz.gunun_turu.bitti \(d.kind?.dogruSayisi ?? 0) \(d.length)")
+                } else if d.answeredCount == 0 {
+                    Text(app: "quiz.gunun_turu.alt")
+                }
+            }
+            .typography(.body).opacity(0.9)
+            Spacer(minLength: 16)
+            NavigationLink(value: Goal.quizGame("gun")) {
+                Text(
+                    verbatim: d.finished
+                        ? localized("quiz.sonucu_gor")
+                        : d.answeredCount > 0
+                            ? localized("quiz.devam_kalan \(d.length - d.answeredCount)")
+                            : localized("quiz.basla")
+                )
+                .typography(.emphasized)
+                .foregroundStyle(theme.colors.accent)
+                .padding(.horizontal, 28)
+                .frame(minHeight: 56)
+                .background(.white, in: .capsule)
+                .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
+        }
+        .foregroundStyle(theme.colors.onAccent)
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            theme.colors.accent
+                .overlay {
+                    RadialGradient(
+                        colors: [.white.opacity(0.16), .clear], center: UnitPoint(x: 0.8, y: 0.3),
+                        startRadius: 0, endRadius: 320)
+                }
+                .accessibilityHidden(true)
+        }
+        .clipShape(.rect(cornerRadius: 34))
+        .shadow(color: theme.colors.accent.opacity(0.28), radius: 20, y: 18)
+        .padEnter()
     }
 }
 

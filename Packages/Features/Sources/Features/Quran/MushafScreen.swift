@@ -46,6 +46,41 @@ struct MushafPageLayout: Codable, Sendable {
     }
 }
 
+#if DEBUG
+    extension MushafPageLayout {
+        /// See `-mushafGitter`.
+        init(page: Int, rows: [Line]) {
+            self.page = page
+            typography = nil
+            self.rows = rows
+        }
+
+        static func testGrid(
+            page: Int, range: ClosedRange<Int>, _ contentProvider: any ContentProvider
+        ) -> MushafPageLayout {
+            var marks: [String] = []
+            for i in range {
+                if case .verse(let s, let a)? = contentProvider.key(index: i),
+                    let v = contentProvider.verse(.verse(surah: s, verse: a))
+                {
+                    for w in 1...max(1, v.words.count) { marks.append("\(s):\(a):\(w)") }
+                }
+            }
+            let perLine = max(1, Int((Double(marks.count) / 15).rounded(.up)))
+            var rows: [Line] = []
+            var i = 0
+            var n = 1
+            while i < marks.count {
+                let end = min(marks.count - 1, i + perLine - 1)
+                rows.append(Line(number: n, first: marks[i], end: marks[end], words: nil))
+                i = end + 1
+                n += 1
+            }
+            return MushafPageLayout(page: page, rows: rows)
+        }
+    }
+#endif
+
 /// The service for mushaf page layouts: the Quran Foundation routes of the relay; a plugin may name
 /// another service with the same paths and format.
 public enum MushafLayoutSource {
@@ -376,7 +411,7 @@ struct MushafScreen: View {
     /// Tajweed on: V4 color font on the V2 grid; otherwise V1. `page` counts in this edition.
     private var edition: MushafEdition { MushafEdition(setting: settings.mushafEdition) }
 
-    var body: some View {
+    private var pager: some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(1...604, id: \.self) { n in
@@ -399,178 +434,199 @@ struct MushafScreen: View {
         }
         // Arabic book: the next page is on the left.
         .environment(\.layoutDirection, .rightToLeft)
-        .onAppear {
-            if let first = firstLaunch {
-                // Back from the surah view: adopt its position.
-                if let s = QuranPosition.shared.fromOther(.mushaf, after: first), let contentProvider,
-                    let n = edition.page(index: s, contentProvider), n != page
-                {
-                    page = n
+    }
+
+    private var trackedPager: some View {
+        pager
+            .onAppear {
+                if let first = firstLaunch {
+                    // Back from the surah view: adopt its position.
+                    if let s = QuranPosition.shared.fromOther(.mushaf, after: first), let contentProvider,
+                        let n = edition.page(index: s, contentProvider), n != page
+                    {
+                        page = n
+                    }
+                    firstLaunch = .now
+                    return
                 }
                 firstLaunch = .now
-                return
-            }
-            firstLaunch = .now
-            if page == nil, let contentProvider {
-                page = MushafEdition.v1.convert(start, nach: edition, contentProvider)
-            }
-        }
-        .onChange(of: page) { _, n in
-            guard let n, let contentProvider, let b = edition.interval(n, contentProvider) else { return }
-            QuranPosition.shared.save(b.first, .mushaf)
-        }
-        // Tajweed toggled: the same position in the other numbering.
-        .onChange(of: edition) { old, yeni in
-            guard let s = page, let contentProvider else { return }
-            page = old.convert(s, nach: yeni, contentProvider)
-        }
-        // While listening, the page pages along when the verse being played is on the next one.
-        .onChange(of: player.current) { _, s in
-            guard following, let s else { return }
-            pageAlong(s)
-        }
-        // New playback: follow again.
-        .onChange(of: player.queue) { withAnimation { following = true } }
-        #if DEBUG
-            .task { await followCheck(player, contentProvider) { following = false } }
-        #endif
-        .overlay(alignment: .bottomTrailing) {
-            if player.isActive && !following {
-                FollowAlongButton {
-                    withAnimation { following = true }
-                    if let s = player.current { pageAlong(s) }
+                if page == nil, let contentProvider {
+                    page = MushafEdition.v1.convert(start, nach: edition, contentProvider)
                 }
             }
-        }
-        // Playback from the Mushaf („Buradan dinle“) needs pause/stop as in the reader.
-        .safeAreaInset(edge: .bottom) { PlayerBar() }
-        // One-time hint that the page can be enlarged.
-        // At the top below the title bar so that it covers no surah band and no line at the page end.
-        .overlay(alignment: .top) {
-            if zoomHint {
-                Text(app: "kuran.mushaf.zoom_ipucu")
-                    .typography(.footnote)
-                    .foregroundStyle(theme.colors.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.regularMaterial, in: .capsule)
-                    .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
-                    .padding(.top, 8)
-                    .transition(.opacity)
-                    .onTapGesture { withAnimation { zoomHint = false } }
+            .onChange(of: page) { _, n in
+                guard let n, let contentProvider, let b = edition.interval(n, contentProvider) else { return }
+                QuranPosition.shared.save(b.first, .mushaf)
             }
-        }
-        .task {
-            guard !zoomHintSeen else { return }
-            zoomHintSeen = true
-            withAnimation { zoomHint = true }
-            try? await Task.sleep(for: .seconds(5))
-            withAnimation { zoomHint = false }
-        }
-        .pageBackground()
-        .navigationTitle(title)
-        .smallTitle()
-        .toolbar {
-            // The title is a button: jump directly to surah, juz or page.
-            ToolbarItem(placement: .principal) {
-                Button {
-                    goOpen = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(verbatim: title).font(.headline).lineLimit(1)
-                        Image(systemName: "chevron.down").font(.caption.weight(.semibold))
-                            .foregroundStyle(theme.colors.text2)
+            // Tajweed toggled: the same position in the other numbering.
+            .onChange(of: edition) { old, yeni in
+                guard let s = page, let contentProvider else { return }
+                page = old.convert(s, nach: yeni, contentProvider)
+            }
+            // While listening, the page pages along when the verse being played is on the next one.
+            .onChange(of: player.current) { _, s in
+                guard following, let s else { return }
+                pageAlong(s)
+            }
+            // New playback: follow again.
+            .onChange(of: player.queue) { withAnimation { following = true } }
+            #if DEBUG
+                .task { await followCheck(player, contentProvider) { following = false } }
+            #endif
+    }
+
+    private var pagerWithBars: some View {
+        trackedPager
+            .overlay(alignment: .bottomTrailing) {
+                if player.isActive && !following {
+                    FollowAlongButton {
+                        withAnimation { following = true }
+                        if let s = player.current { pageAlong(s) }
                     }
-                    .foregroundStyle(theme.colors.text)
                 }
-                .accessibilityHint(localized("kuran.mushaf.git.ipucu"))
             }
-            // Listen as in the reader: Okuma Seçenekleri from the first verse of the page.
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    guard let contentProvider, let b = edition.interval(page ?? start, contentProvider),
-                        let k = contentProvider.key(index: b.first)
-                    else { return }
-                    readingVerse = contentProvider.verse(k)
-                } label: {
-                    Image(systemName: "play.fill")
+            // Playback from the Mushaf („Buradan dinle“) needs pause/stop as in the reader.
+            .safeAreaInset(edge: .bottom) { PhonePlayerBar() }
+            // One-time hint that the page can be enlarged.
+            // At the top below the title bar so that it covers no surah band and no line at the page end.
+            .overlay(alignment: .top) {
+                if zoomHint {
+                    Text(app: "kuran.mushaf.zoom_ipucu")
+                        .typography(.footnote)
+                        .foregroundStyle(theme.colors.text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.regularMaterial, in: .capsule)
+                        .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+                        .padding(.top, 8)
+                        .transition(.opacity)
+                        .onTapGesture { withAnimation { zoomHint = false } }
                 }
-                .accessibilityLabel(localized("kuran.oynatici.dinle"))
             }
-            // The same menu as in the surah view; instead of „Mushaf“ it leads to the
-            // surah view, plus the edition (V1/V2/V4 with tajweed,).
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    if let contentProvider, let b = edition.interval(page ?? start, contentProvider),
-                        let k = contentProvider.key(index: b.first)
-                    {
-                        SlotView(.verseMenuAction(k))
-                        NavigationLink {
-                            ReaderScreen(start: k)
-                        } label: {
-                            Label(localized("kuran.sure_gorunumu"), systemImage: "list.bullet.rectangle")
+            .task {
+                guard !zoomHintSeen else { return }
+                zoomHintSeen = true
+                withAnimation { zoomHint = true }
+                try? await Task.sleep(for: .seconds(5))
+                withAnimation { zoomHint = false }
+            }
+    }
+
+    var body: some View {
+        pagerWithBars
+            .pageBackground()
+            .navigationTitle(title)
+            .smallTitle()
+            .toolbar { mushafToolbar }
+            .sheet(item: $selected, onDismiss: { light = nil }) { a in
+                VerseSheet(
+                    verse: a,
+                    changed: { y in
+                        light = y.key
+                        goToPage(surah: y.surah, verse: y.verse)
+                    })
+            }
+            .environment(\.openVerse, light)
+            .sheet(item: $readingVerse) { ReadingOptions(verse: $0) }
+            .sheet(isPresented: $settingOpen) { ReadingSettings() }
+            .sheet(isPresented: $editionSelect) {
+                NavigationStack { MushafPicker() }.presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $goOpen) {
+                MushafJumpSheet(current: page ?? start, edition: edition) { page = $0 }
+            }
+            .task(id: page) {
+                // Preload neighboring pages (layout and font) so paging does not wait for the network.
+                if let page {
+                    let s = edition
+                    let dark = theme.colors.dark
+                    let server = MushafLayoutStore.server()
+                    Task(priority: .utility) {
+                        let store = MushafLayoutStore.shared
+                        for n in [page + 1, page - 1, page + 2] where (1...604).contains(n) {
+                            _ = await store.layout(n, server: server, edition: s)
+                            _ = await store.typography(n, edition: s, dark: dark)
                         }
                     }
-                    Button {
-                        settingOpen = true
-                    } label: {
-                        Label(localized("kuran.okuma_ayarlari"), systemImage: "textformat.size")
-                    }
-                    Button {
-                        editionSelect = true
-                    } label: {
-                        Label(localized("mushaf.fassung.baslik"), systemImage: "paintpalette")
-                    }
-                    NavigationLink(value: Goal.downloaded) {
-                        Label(localized("kuran.indirilenler"), systemImage: "arrow.down.circle")
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
                 }
+                guard let page, let contentProvider, let b = edition.interval(page, contentProvider) else {
+                    return
+                }
+                if let k = contentProvider.key(index: b.first) {
+                    store.saveLastPosition(k.text, khatm: settings.activeKhatm)
+                }
+                // A page that is open for 8 s counts as read.
+                try? await Task.sleep(for: .seconds(8))
+                guard !Task.isCancelled else { return }
+                store.addReading(
+                    firstIndex: b.first, lastIndex: b.end, seconds: 8, khatm: settings.activeKhatm)
+            }
+            .task { await MushafLayoutStore.shared.clear() }
+    }
+
+    @ToolbarContentBuilder private var mushafToolbar: some ToolbarContent {
+        // The title is a button: jump directly to surah, juz or page.
+        ToolbarItem(placement: .principal) {
+            Button {
+                goOpen = true
+            } label: {
+                HStack(spacing: 4) {
+                    Text(verbatim: title).font(.headline).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                        .foregroundStyle(theme.colors.text2)
+                }
+                .foregroundStyle(theme.colors.text)
+            }
+            .accessibilityHint(localized("kuran.mushaf.git.ipucu"))
+        }
+        // Listen as in the reader: Okuma Seçenekleri from the first verse of the page.
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                guard let contentProvider, let b = edition.interval(page ?? start, contentProvider),
+                    let k = contentProvider.key(index: b.first)
+                else { return }
+                readingVerse = contentProvider.verse(k)
+            } label: {
+                Image(systemName: "play.fill")
+            }
+            .accessibilityLabel(localized("kuran.oynatici.dinle"))
+        }
+        // The same menu as in the surah view; instead of „Mushaf“ it leads to the
+        // surah view, plus the edition (V1/V2/V4 with tajweed,).
+        ToolbarItem(placement: .primaryAction) {
+            moreMenu
                 .accessibilityLabel(localized("kuran.daha_fazla"))
-            }
         }
-        .sheet(item: $selected, onDismiss: { light = nil }) { a in
-            VerseSheet(verse: a) { y in
-                light = y.key
-                goToPage(surah: y.surah, verse: y.verse)
-            }
-        }
-        .environment(\.openVerse, light)
-        .sheet(item: $readingVerse) { ReadingOptions(verse: $0) }
-        .sheet(isPresented: $settingOpen) { ReadingSettings() }
-        .sheet(isPresented: $editionSelect) {
-            NavigationStack { MushafPicker() }.presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $goOpen) {
-            MushafJumpSheet(current: page ?? start, edition: edition) { page = $0 }
-        }
-        .task(id: page) {
-            // Preload neighboring pages (layout and font) so paging does not wait for the network.
-            if let page {
-                let s = edition
-                let dark = theme.colors.dark
-                let server = MushafLayoutStore.server()
-                Task(priority: .utility) {
-                    let store = MushafLayoutStore.shared
-                    for n in [page + 1, page - 1, page + 2] where (1...604).contains(n) {
-                        _ = await store.layout(n, server: server, edition: s)
-                        _ = await store.typography(n, edition: s, dark: dark)
-                    }
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            if let contentProvider, let b = edition.interval(page ?? start, contentProvider),
+                let k = contentProvider.key(index: b.first)
+            {
+                SlotView(.verseMenuAction(k))
+                NavigationLink {
+                    ReaderScreen(start: k)
+                } label: {
+                    Label(localized("kuran.sure_gorunumu"), systemImage: "list.bullet.rectangle")
                 }
             }
-            guard let page, let contentProvider, let b = edition.interval(page, contentProvider) else {
-                return
+            Button {
+                settingOpen = true
+            } label: {
+                Label(localized("kuran.okuma_ayarlari"), systemImage: "textformat.size")
             }
-            if let k = contentProvider.key(index: b.first) {
-                store.saveLastPosition(k.text, khatm: settings.activeKhatm)
+            Button {
+                editionSelect = true
+            } label: {
+                Label(localized("mushaf.fassung.baslik"), systemImage: "paintpalette")
             }
-            // A page that is open for 8 s counts as read.
-            try? await Task.sleep(for: .seconds(8))
-            guard !Task.isCancelled else { return }
-            store.addReading(firstIndex: b.first, lastIndex: b.end, seconds: 8, khatm: settings.activeKhatm)
+            NavigationLink(value: Goal.downloaded) {
+                Label(localized("kuran.indirilenler"), systemImage: "arrow.down.circle")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
         }
-        .task { await MushafLayoutStore.shared.clear() }
     }
 
     /// While listening, the page pages along when the verse being played is on a different one.
@@ -590,6 +646,13 @@ struct MushafScreen: View {
         else { return localized("kuran.mushaf") }
         return
             "\(contentProvider.surah(s)?.name(language: translationLanguage()) ?? "") · \(localized("kuran.sayfa_no \(n)"))"
+    }
+}
+
+/// On the iPad the global player takes over.
+private struct PhonePlayerBar: View {
+    var body: some View {
+        if !PadLayout.isPad { PlayerBar() }
     }
 }
 
@@ -680,6 +743,15 @@ struct MushafPage: View {
             async let file = store.typography(number, edition: edition, dark: theme.colors.dark)
             var d = await layout
             let u = await file
+            #if DEBUG
+                // Simulator without page packs: `-mushafGitter YES` lays the words of the page on 15 lines, to
+                // check the grid at this size. Not the print's line breaks.
+                if UserDefaults.standard.bool(forKey: "mushafGitter"), d == nil,
+                    let b = edition.interval(number, contentProvider)
+                {
+                    d = MushafPageLayout.testGrid(page: number, range: b.first...b.end, contentProvider)
+                }
+            #endif
             var f: CTFont? = d?.typography == edition.raster ? Self.loadFont(u) : nil
             tajweedInverted = edition == .v4 && u?.pathExtension == "woff2"
             #if DEBUG
@@ -773,7 +845,8 @@ struct MushafPage: View {
                     Text(verbatim: "\(number)")
                 }
             }
-            .typography(.footnote).foregroundStyle(theme.colors.text2)
+            .typography(PadLayout.isPad ? .display(size: 15) : .footnote)
+            .foregroundStyle(PadLayout.isPad ? theme.colors.label : theme.colors.text2)
             .lineLimit(1)
             .frame(height: 22)
         }

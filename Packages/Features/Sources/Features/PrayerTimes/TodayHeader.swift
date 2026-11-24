@@ -101,7 +101,7 @@ struct NextPrayerCard: View {
 
     /// The line below the countdown: karahat now, tight deadline, or the start of a karahat
     /// that lies before the next prayer time. Otherwise nothing - the card stays calm.
-    private func noteText(_ r: Urgency) -> String? {
+    func noteText(_ r: Urgency) -> String? {
         // During the İmsak prayer time the Sabah prayer is performed; „İmsak için“ would be misleading.
         let name =
             status.current == .imsak
@@ -122,7 +122,7 @@ struct NextPrayerCard: View {
     }
 
     /// Progress from the current to the next prayer time; karahat sections within it hatched.
-    private func strip(parent: Color) -> some View {
+    func strip(parent: Color) -> some View {
         let start = status.currentStart
         let total = max(1, status.nextTime.timeIntervalSince(start))
         let parts = timeline.karahatWindows.compactMap { k -> (Double, Double)? in
@@ -174,7 +174,7 @@ struct NextPrayerCard: View {
     }
 
     /// In Ramadan, „İftar“ is added at Maghrib and „Sahur“ at İmsak.
-    private func name(_ fridayNext: Bool) -> String {
+    func name(_ fridayNext: Bool) -> String {
         let name = status.next.name(friday: fridayNext)
         guard ramadan else { return name }
         switch status.next {

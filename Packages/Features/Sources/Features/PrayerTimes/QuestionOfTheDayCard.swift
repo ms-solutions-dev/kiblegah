@@ -15,17 +15,25 @@ struct QuestionOfTheDayCard: View {
     @Environment(UserStore.self) private var store
     @Environment(\.theme) private var theme
     let day: Day
+    /// iPad: the options side by side, so that the question fits a low card.
+    var optionColumns = 1
+    var showsTitle = true
     @State private var question: QuestionOfTheDay?
 
     var body: some View {
         let _ = store.version
         VStack(alignment: .leading, spacing: 10) {
-            Text(app: "bugun.soru.baslik").typography(.footnote).textCase(.uppercase)
-                .foregroundStyle(theme.colors.label)
+            if showsTitle {
+                Text(app: "bugun.soru.baslik").typography(.footnote).textCase(.uppercase)
+                    .foregroundStyle(theme.colors.label)
+            }
             if let contentProvider, let question {
                 let answer = store.questionAnswer(day: day.description)
                 questionText(question, contentProvider)
-                VStack(spacing: 8) {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: optionColumns),
+                    spacing: 8
+                ) {
                     ForEach(Array(question.options.enumerated()), id: \.offset) { i, s in
                         option(
                             i, s, question: question, selection: answer?.secim,

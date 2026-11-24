@@ -6,10 +6,11 @@ import os
 
 #if os(iOS)
     import MediaPlayer
+    import UIKit
 #endif
 
 @MainActor @Observable public final class RecitationPlayer {
-    public struct QueueItem: Equatable, Sendable {
+    public struct QueueItem: Equatable, Sendable, Codable {
         public let surah: Int
         public let verse: Int
         /// The prepended basmala (shows verse 1, plays 1:1).
@@ -50,19 +51,19 @@ import os
     /// `fullSurah` reciter: the verse timings for this surah have not been computed yet.
     public private(set) var zamanYok = false
     public var reciter: Reciter = .standard {
-        didSet { reschedule() }
+        didSet { if reciter.id != oldValue.id { reciterChanged(from: oldValue) } }
     }
     /// How often each verse is played (1 = no repetition).
     public var repetition = 1 {
-        didSet { reschedule() }
+        didSet { if repetition != oldValue { reschedule() } }
     }
     /// How often the whole range is played.
     public var rangeRepeat = 1 {
-        didSet { reschedule() }
+        didSet { if rangeRepeat != oldValue { reschedule() } }
     }
     /// Seconds of silence after each pass of a verse (for repeating aloud).
     public var delay: Double = 0 {
-        didSet { reschedule() }
+        didSet { if delay != oldValue { reschedule() } }
     }
     /// The word being spoken right now (position in the verse), if word timings are available.
     public private(set) var currentWord: Int?
@@ -119,6 +120,43 @@ import os
     private var endMs: Int?
     /// Transitions with timestamp (DEBUG only): `log stream --predicate 'subsystem == "dev.ms-solutions.kiblegah"'`.
     private static let daily = Logger(subsystem: "dev.ms-solutions.kiblegah", category: "oynatici")
+    /// Between the start and the end of a system interruption (call, Siri, another app).
+    private var interrupted = false
+    /// Whether the interruption stopped playback; a pause by the user stays a pause afterwards.
+    private var resumeAfterInterruption = false
+    /// A video took over the audio session: the lock screen belongs to it until the user resumes here.
+    private var yieldedToVideo = false
+    /// Where the last playback is remembered, so that it survives iOS ending the app.
+    private let defaults: UserDefaults
+    #if os(iOS)
+        /// What the lock screen shows; the app provides it, this package knows neither names nor fonts.
+        public struct NowPlayingContent {
+            let title: @MainActor (QueueItem) -> String
+            let artwork: @MainActor (QueueItem) -> UIImage?
+            /// Tall (3:4) cover per surah: preview image and video.
+            let tallPreview: @MainActor (Int) -> UIImage?
+            let tallVideo: @Sendable (Int) async -> URL?
+
+            public init(
+                title: @escaping @MainActor (QueueItem) -> String,
+                artwork: @escaping @MainActor (QueueItem) -> UIImage?,
+                tallPreview: @escaping @MainActor (Int) -> UIImage?,
+                tallVideo: @escaping @Sendable (Int) async -> URL?
+            ) {
+                self.title = title
+                self.artwork = artwork
+                self.tallPreview = tallPreview
+                self.tallVideo = tallVideo
+            }
+        }
+
+        @ObservationIgnored public var nowPlayingContent: NowPlayingContent?
+        /// One image per verse: it is drawn once and reused while the verse repeats or pauses.
+        @ObservationIgnored private var artworkCache: (item: QueueItem, artwork: MPMediaItemArtwork)?
+        @ObservationIgnored private var tallCache: (surah: Int, artwork: MPMediaItemAnimatedArtwork)?
+        /// Keeps the app awake through a repeat-aloud pause, during which no audio holds it.
+        @ObservationIgnored private var gapTask: UIBackgroundTaskIdentifier = .invalid
+    #endif
 
     /// The current step as a whole.
     private var step: Step {
@@ -130,9 +168,10 @@ import os
         }
     }
 
-    public init(store: AudioStore, cache: AudioCache = AudioCache()) {
+    public init(store: AudioStore, cache: AudioCache = AudioCache(), defaults: UserDefaults = .standard) {
         self.store = store
         self.cache = cache
+        self.defaults = defaults
         motor.attach(node)
         motor.attach(tempo)
         observers.append(
@@ -192,6 +231,12 @@ import os
                         self.togglePause()
                     }
                 })
+            observers.append(
+                NotificationCenter.default.addObserver(
+                    forName: .videoPlaybackWillStart, object: nil, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.yieldToVideo() }
+                })
         #endif
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(value: 1, timescale: 10), queue: .main
@@ -244,7 +289,8 @@ import os
         queue = k
         location = 0
         remainingRange = max(1, rangeRepeat)
-        activateSession()
+        takeOverAudio()
+        saveQueue()
         load(word: word)
     }
 
@@ -270,17 +316,25 @@ import os
     public func togglePause() {
         pending?.cancel()
         pending = nil
+        endGapTask()
         if isPlaying {
             if reciter.fullSurah != nil { player.pause() } else { node.pause() }
             isPlaying = false
         } else if isActive {
+            // iOS deactivates the session during a call and may have ended it while paused.
+            takeOverAudio()
             if offlineError || zamanYok { return load(continueMs: continueMs) }
             isPlaying = true
             if let d = resume {
                 resume = nil
                 d()
             } else if reciter.fullSurah != nil {
+                // Restored after a restart: nothing is loaded yet.
+                guard player.currentItem != nil else { return load() }
                 player.playImmediately(atRate: speed)
+            } else if !motor.isRunning {
+                // The system stopped the engine, or the app was restarted: the schedule is gone.
+                return load(continueMs: verseMs ?? continueMs)
             } else {
                 playNode()
             }
@@ -291,6 +345,7 @@ import os
     /// To the next entry, remaining passes of the current verse skipped.
     public func next() {
         releasePause()
+        takeOverAudio()
         let forNow = Step(location: location, remainingRepeats: 1, remainingRange: remainingRange)
         guard let n = Self.nextStep(forNow, queue: queue, repetition: repetition) else { return stop() }
         step = n
@@ -299,6 +354,7 @@ import os
 
     public func previous() {
         releasePause()
+        takeOverAudio()
         guard location > 0 else { return load() }
         location -= 1
         load()
@@ -315,6 +371,7 @@ import os
     }
 
     public func stop() {
+        let wasActive = isActive
         releasePause()
         currentWord = nil
         resetEngine()
@@ -325,13 +382,18 @@ import os
         isPlaying = false
         queue = []
         location = 0
+        clearSavedPlayback()
         updateInfo()
+        // Hands the audio back, so that music or a podcast can continue; a video keeps the session.
+        if wasActive, !yieldedToVideo { deactivateSession() }
+        yieldedToVideo = false
     }
 
     private func releasePause() {
         pending?.cancel()
         pending = nil
         resume = nil
+        endGapTask()
     }
 
     /// Deletes everything scheduled and resets the node's timeline; running loaders
@@ -361,7 +423,11 @@ import os
         downloadCount += 1
         offlineError = false
         zamanYok = false
-        if reciter.fullSurah != nil { return fromSurahFile(s) }
+        if reciter.fullSurah != nil {
+            // Set before loading, so that a pause during the load counts (`fromSurahFile` respects it).
+            isPlaying = true
+            return fromSurahFile(s)
+        }
         player.pause()
         player.removeAllItems()
         playingItem = nil
@@ -479,13 +545,26 @@ import os
         log(
             "plan[\(index)] \(queue[a.location].surah):\(queue[a.location].verse) ab \(start) ms, \(length) Frames, tekrar \(a.remainingRepeats)"
         )
-        if index == 0, isPlaying { playNode() }
+        if index == 0 {
+            if isPlaying { playNode() }
+            // The length of the verse is known only now.
+            updateInfo()
+        }
     }
 
     /// Lets the node play (engine on, wall clock on).
     private func playNode() {
         if !motor.isRunning {
-            do { try motor.start() } catch { return hold(zamanYok: false) }
+            do {
+                try motor.start()
+            } catch {
+                // Not a connection problem (a call is still running, for example): the position
+                // stays, the bar shows pause, and Play tries again.
+                log("motor start failed: \(error)")
+                continueMs = verseMs ?? continueMs
+                isPlaying = false
+                return updateInfo()
+            }
         }
         node.play()
         if positionTimer == nil {
@@ -567,28 +646,53 @@ import os
         guard isActive, resume == nil else { return }
         if reciter.fullSurah != nil { return }
         guard !scheduled.isEmpty else { return }
-        load(continueMs: verseMs)
+        reload(continueMs: verseMs)
+    }
+
+    /// Between verse and surah files the running plan is of no use, so the verse starts anew with
+    /// the new reciter; between verse files the position is kept (`reschedule`).
+    private func reciterChanged(from old: Reciter) {
+        guard isActive else { return }
+        if old.fullSurah == nil, reciter.fullSurah == nil { return reschedule() }
+        reload(continueMs: nil)
+    }
+
+    /// Loads anew without changing whether it plays: a paused player stays paused.
+    private func reload(continueMs ms: Int?) {
+        let wasPlaying = isPlaying
+        load(continueMs: ms)
+        if !wasPlaying { togglePause() }
     }
 
     /// Output changed (headphones, speaker): the engine is stopped; continue from the same position.
     private func engineChanged() {
-        guard isActive, reciter.fullSurah == nil, !scheduled.isEmpty else { return }
-        let ms = verseMs
-        let shouldPlay = isPlaying
-        load(continueMs: ms)
-        if !shouldPlay { togglePause() }
+        // During an interruption the engine cannot start; resuming reloads from the position.
+        guard !interrupted, isActive, reciter.fullSurah == nil, !scheduled.isEmpty else { return }
+        reload(continueMs: verseMs)
     }
 
-    #if os(iOS)
-        /// Call or another app: pause; then resume if the system offers it.
-        private func interruption(started: Bool, resumption: Bool) {
-            if started, isPlaying {
-                togglePause()
-            } else if !started, resumption, !isPlaying, isActive {
-                togglePause()
-            }
+    /// Call or another app: pause; afterwards resume only if the interruption is what stopped
+    /// playback and the system offers it. A pause by the user stays a pause.
+    func interruption(started: Bool, resumption: Bool) {
+        if started {
+            interrupted = true
+            resumeAfterInterruption = isPlaying
+            if isPlaying { togglePause() }
+        } else {
+            interrupted = false
+            let resumeNow = resumeAfterInterruption && resumption && !isPlaying && isActive
+            resumeAfterInterruption = false
+            if resumeNow { togglePause() }
         }
-    #endif
+    }
+
+    /// A video starts: it gets the audio and the lock screen; the Quran stays paused at its position.
+    private func yieldToVideo() {
+        guard isActive else { return }
+        if isPlaying { togglePause() }
+        yieldedToVideo = true
+        publishNowPlaying()
+    }
 
     /// Preloads the word timings of a surah (e.g. before „ab diesem Wort“ is offered).
     public func prepareTimings(surah: Int) async -> Bool {
@@ -604,10 +708,11 @@ import os
     private func fromSurahFile(_ s: QueueItem, repeatPlayback: Bool = false) {
         guard let url = reciter.surahFile(s.surah) else { return stop() }
         let k = reciter
+        let n = generation
         Task {
             let result = await surahTimings.surah(s.surah, reciter: k)
             // Meanwhile another surah was selected: do not stop its playback.
-            guard current == s else { return }
+            guard current == s, generation == n else { return }
             let z: [Int: SurahTimings.VerseTiming]
             switch result {
             case .ready(let h): z = h
@@ -629,9 +734,10 @@ import os
             let now = Int(player.currentTime().seconds * 1000)
             if !same || abs(now - start) > 400 {
                 await player.seek(to: CMTime(value: CMTimeValue(start), timescale: 1000))
+                guard current == s, generation == n else { return }
             }
-            player.playImmediately(atRate: speed)
-            isPlaying = true
+            // Paused while loading: stays paused.
+            if isPlaying { player.playImmediately(atRate: speed) }
             updateInfo()
             log("sure-dosyası \(s.surah):\(s.verse) \(start)–\(end) ms, stand \(now) ms")
         }
@@ -672,11 +778,14 @@ import os
     private func afterGap(_ resumption: @escaping () -> Void) {
         currentWord = nil
         resume = resumption
+        updateInfo()
+        beginGapTask()
         pending = Task { [delay] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let d = resume else { return }
             resume = nil
             d()
+            endGapTask()
         }
     }
 
@@ -690,48 +799,213 @@ import os
         #endif
     }
 
+    /// Takes the audio from a video or after an interruption; called for everything the user starts.
+    private func takeOverAudio() {
+        yieldedToVideo = false
+        activateSession()
+    }
+
     private func activateSession() {
         #if os(iOS)
             try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try? AVAudioSession.sharedInstance().setActive(true)
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
+                log("session not active: \(error)")
+            }
         #endif
     }
 
-    private func updateInfo() {
+    private func deactivateSession() {
         #if os(iOS)
-            guard let s = current else {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
+    }
+
+    private func beginGapTask() {
+        #if os(iOS)
+            endGapTask()
+            gapTask = UIApplication.shared.beginBackgroundTask(withName: "repeat-aloud pause") {
+                [weak self] in
+                MainActor.assumeIsolated { self?.endGapTask() }
+            }
+        #endif
+    }
+
+    private func endGapTask() {
+        #if os(iOS)
+            guard gapTask != .invalid else { return }
+            UIApplication.shared.endBackgroundTask(gapTask)
+            gapTask = .invalid
+        #endif
+    }
+
+    // MARK: Remembering the playback
+
+    private static let savedQueueKey = "player.savedQueue"
+    private static let savedPositionKey = "player.savedPosition"
+    /// How long a remembered playback is offered again.
+    nonisolated static let savedPlaybackLifetime: TimeInterval = 24 * 60 * 60
+
+    private struct SavedPosition: Codable {
+        let location: Int
+        let reciterID: String
+        let positionMs: Int?
+        let savedAt: Date
+    }
+
+    /// Only when the queue changes: it can hold thousands of entries, the position changes per verse.
+    private func saveQueue() {
+        defaults.set(try? JSONEncoder().encode(queue), forKey: Self.savedQueueKey)
+    }
+
+    private func savePosition() {
+        guard isActive else { return }
+        let position = SavedPosition(
+            location: location, reciterID: reciter.id, positionMs: verseMs ?? continueMs, savedAt: .now)
+        defaults.set(try? JSONEncoder().encode(position), forKey: Self.savedPositionKey)
+    }
+
+    private func clearSavedPlayback() {
+        defaults.removeObject(forKey: Self.savedQueueKey)
+        defaults.removeObject(forKey: Self.savedPositionKey)
+    }
+
+    /// After iOS ended the app: back to the last position, paused, so that Play simply continues.
+    public func restoreLastPlayback(now: Date = .now) {
+        guard !isActive,
+            let queueData = defaults.data(forKey: Self.savedQueueKey),
+            let positionData = defaults.data(forKey: Self.savedPositionKey),
+            let k = try? JSONDecoder().decode([QueueItem].self, from: queueData),
+            let p = try? JSONDecoder().decode(SavedPosition.self, from: positionData),
+            k.indices.contains(p.location),
+            now.timeIntervalSince(p.savedAt) < Self.savedPlaybackLifetime
+        else { return }
+        reciter = Reciter.find(p.reciterID)
+        queue = k
+        location = p.location
+        remainingRange = max(1, rangeRepeat)
+        remainingRepeats = Self.repeatCount(k[p.location], repetition: repetition)
+        continueMs = p.positionMs
+        isPlaying = false
+        publishNowPlaying()
+    }
+
+    // MARK: Lock screen
+
+    private func updateInfo() {
+        savePosition()
+        publishNowPlaying()
+    }
+
+    private func publishNowPlaying() {
+        #if os(iOS)
+            guard let s = current, !yieldedToVideo else {
                 MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+                setCommandsEnabled(false)
                 return
             }
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-                MPMediaItemPropertyTitle: "\(s.surah):\(s.verse)",
+            setCommandsEnabled(true)
+            var info: [String: Any] = [
+                MPMediaItemPropertyTitle: nowPlayingContent?.title(s) ?? "\(s.surah):\(s.verse)",
                 MPMediaItemPropertyArtist: reciter.name,
-                MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? speed : 0,
+                MPNowPlayingInfoPropertyPlaybackRate: isPlaying && resume == nil ? speed : 0,
+                MPNowPlayingInfoPropertyDefaultPlaybackRate: 1,
             ]
+            if let t = playbackTimes {
+                info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = t.elapsed
+                info[MPMediaItemPropertyPlaybackDuration] = t.duration
+            }
+            if let artwork = artwork(for: s) { info[MPMediaItemPropertyArtwork] = artwork }
+            if let tall = tallArtwork(for: s) { info[MPNowPlayingInfoProperty3x4AnimatedArtwork] = tall }
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         #endif
+    }
+
+    /// Position and length of the current verse in seconds, once they are known.
+    private var playbackTimes: (elapsed: Double, duration: Double)? {
+        if reciter.fullSurah != nil {
+            let now = player.currentTime().seconds
+            guard let end = endMs, end != Int.max, end > startMs, now.isFinite else { return nil }
+            return (max(0, now * 1000 - Double(startMs)) / 1000, Double(end - startMs) / 1000)
+        }
+        guard let p = scheduled.first, let ms = verseMs else { return nil }
+        return (Double(ms) / 1000, (Double(p.realStart) + Double(p.length) / p.ratio * 1000) / 1000)
     }
 
     #if os(iOS)
+        /// The system shows it only when it wants to; without support the normal cover stays.
+        private func tallArtwork(for s: QueueItem) -> MPMediaItemAnimatedArtwork? {
+            if let c = tallCache, c.surah == s.surah { return c.artwork }
+            guard
+                MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys.contains(
+                    MPNowPlayingInfoProperty3x4AnimatedArtwork),
+                let content = nowPlayingContent, let preview = content.tallPreview(s.surah)
+            else { return nil }
+            let artwork = Self.makeTallArtwork(surah: s.surah, preview: preview, video: content.tallVideo)
+            tallCache = (s.surah, artwork)
+            // Create it now: the encoder is certainly available in the foreground, maybe not when locked.
+            let surah = s.surah
+            let video = content.tallVideo
+            Task.detached { _ = await video(surah) }
+            return artwork
+        }
+
+        private nonisolated static func makeTallArtwork(
+            surah: Int, preview: UIImage, video: @escaping @Sendable (Int) async -> URL?
+        ) -> MPMediaItemAnimatedArtwork {
+            MPMediaItemAnimatedArtwork(
+                artworkID: "surah-\(surah)-v1",
+                previewImageRequestHandler: { _ in preview },
+                videoAssetFileURLRequestHandler: { _ in await video(surah) })
+        }
+
+        private func artwork(for s: QueueItem) -> MPMediaItemArtwork? {
+            if let c = artworkCache, c.item == s { return c.artwork }
+            guard let image = nowPlayingContent?.artwork(s) else { return nil }
+            let artwork = Self.makeArtwork(image)
+            artworkCache = (s, artwork)
+            return artwork
+        }
+
+        /// `nonisolated` on purpose: MediaPlayer calls the handler on a background thread, and a
+        /// closure formed on the main actor would crash there.
+        private nonisolated static func makeArtwork(_ image: UIImage) -> MPMediaItemArtwork {
+            MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        }
+
+        /// Without a Kuyruk the buttons are off instead of reporting success and doing nothing.
+        private func setCommandsEnabled(_ enabled: Bool) {
+            let m = MPRemoteCommandCenter.shared()
+            for command in [
+                m.togglePlayPauseCommand, m.playCommand, m.pauseCommand, m.nextTrackCommand,
+                m.previousTrackCommand,
+            ] {
+                command.isEnabled = enabled
+            }
+        }
+
+        /// `@Sendable` and over a `Task`: this way it does not matter on which thread iOS calls.
         private func remoteCommands() {
             let m = MPRemoteCommandCenter.shared()
-            m.togglePlayPauseCommand.addTarget { [weak self] _ in
-                MainActor.assumeIsolated { self?.togglePause() }
+            m.togglePlayPauseCommand.addTarget { @Sendable [weak self] _ in
+                Task { @MainActor in self?.togglePause() }
                 return .success
             }
-            m.playCommand.addTarget { [weak self] _ in
-                MainActor.assumeIsolated { if self?.isPlaying == false { self?.togglePause() } }
+            m.playCommand.addTarget { @Sendable [weak self] _ in
+                Task { @MainActor in if self?.isPlaying == false { self?.togglePause() } }
                 return .success
             }
-            m.pauseCommand.addTarget { [weak self] _ in
-                MainActor.assumeIsolated { if self?.isPlaying == true { self?.togglePause() } }
+            m.pauseCommand.addTarget { @Sendable [weak self] _ in
+                Task { @MainActor in if self?.isPlaying == true { self?.togglePause() } }
                 return .success
             }
-            m.nextTrackCommand.addTarget { [weak self] _ in
-                MainActor.assumeIsolated { self?.next() }
+            m.nextTrackCommand.addTarget { @Sendable [weak self] _ in
+                Task { @MainActor in self?.next() }
                 return .success
             }
-            m.previousTrackCommand.addTarget { [weak self] _ in
-                MainActor.assumeIsolated { self?.previous() }
+            m.previousTrackCommand.addTarget { @Sendable [weak self] _ in
+                Task { @MainActor in self?.previous() }
                 return .success
             }
         }

@@ -21,6 +21,10 @@ public protocol Plugin: Sendable {
     @MainActor func extraTafsirSources() -> [TafsirSource]
     /// A `kiblegah://` link (path components) this plugin understands; otherwise nil.
     @MainActor func route(_ parts: [String]) -> Goal?
+    /// Rows of this plugin in the iPad sidebar, group „Medien“.
+    @MainActor func sidebarEntries() -> [PluginSidebarEntry]
+    /// Tiles of this plugin in Entdecken on the iPad.
+    @MainActor func discoverTiles() -> [PluginSidebarEntry]
 }
 
 extension Plugin {
@@ -30,6 +34,8 @@ extension Plugin {
     @MainActor public func provides(_ tab: AppTab) -> Bool { false }
     @MainActor public func extraTafsirSources() -> [TafsirSource] { [] }
     @MainActor public func route(_ parts: [String]) -> Goal? { nil }
+    @MainActor public func sidebarEntries() -> [PluginSidebarEntry] { [] }
+    @MainActor public func discoverTiles() -> [PluginSidebarEntry] { [] }
 }
 
 /// A further tafsir source: identifier (stored under `tefsir.kaynak`) and catalog key of its name.
@@ -119,6 +125,9 @@ public struct Plugins: Sendable {
     @MainActor public func route(_ parts: [String]) -> Goal? {
         list.lazy.compactMap { $0.route(parts) }.first
     }
+
+    @MainActor func sidebarEntries() -> [PluginSidebarEntry] { list.flatMap { $0.sidebarEntries() } }
+    @MainActor func discoverTiles() -> [PluginSidebarEntry] { list.flatMap { $0.discoverTiles() } }
 
     /// Areas without their own package always exist; Sohbet only with a plugin that provides it.
     @MainActor public func provides(_ tab: AppTab) -> Bool {

@@ -83,18 +83,9 @@ struct PrayerTimeWidget: Widget {
         .configurationDisplayName(Text(app: "widget.vakit.ad"))
         .description(Text(app: "widget.vakit.aciklama"))
         .supportedFamilies([
-            .systemSmall, .systemMedium, .accessoryRectangular, .accessoryCircular, .accessoryInline,
+            .systemSmall, .systemMedium, .systemLarge, .systemExtraLarge, .accessoryRectangular,
+            .accessoryCircular, .accessoryInline,
         ])
-    }
-}
-
-extension PrayerStatus.Signal {
-    var color: Color {
-        switch self {
-        case .green: WidgetColor.green
-        case .orange: WidgetColor.orange
-        case .red: WidgetColor.red
-        }
     }
 }
 
@@ -110,6 +101,8 @@ struct PrayerTimeWidgetView: View {
             case .accessoryInline: row(d)
             case .accessoryCircular: circular(d)
             case .accessoryRectangular: rectangular(d)
+            case .systemLarge, .systemExtraLarge:
+                PadPrayerWidget(date: g.date, status: d, snapshot: a, extraLarge: family == .systemExtraLarge)
             case .systemMedium:
                 HStack(alignment: .top, spacing: 16) {
                     counter(d, a, wide: false).frame(width: 132)
@@ -136,16 +129,7 @@ struct PrayerTimeWidgetView: View {
             WidgetColor.label)
     }
 
-    private func title(_ d: PrayerStatus) -> Text {
-        switch (d.kind, d.karahatKind) {
-        case (.prayerTime, _): Text(app: "widget.sayac.vakti \(d.name)")
-        case (_, .sunrise?): Text(app: "widget.sayac.ker.gunes")
-        case (_, .zawal?): Text(app: "widget.sayac.ker.zeval")
-        case (_, .maghrib?): Text(app: "widget.sayac.ker.aksam")
-        case (_, .other?): Text(app: "widget.sayac.ker")
-        default: Text(verbatim: d.name)
-        }
-    }
+    private func title(_ d: PrayerStatus) -> Text { d.widgetTitle }
 
     private func timeText(_ t: Date) -> String {
         t.clockText(
@@ -153,12 +137,7 @@ struct PrayerTimeWidgetView: View {
             locale: AppLanguage.clockLocale)
     }
 
-    /// „18:25“, during Karahat „18:25'e kadar“, during the 45 seconds of „vakti“ nothing.
-    private func clockLine(_ d: PrayerStatus) -> Text? {
-        guard let t = d.time else { return nil }
-        return d.kind == .karahat
-            ? Text(app: "widget.sayac.kadar \(timeText(t))") : Text(verbatim: timeText(t))
-    }
+    private func clockLine(_ d: PrayerStatus) -> Text? { d.widgetClockLine(timeText) }
 
     private func bar(_ d: PrayerStatus, color: Color) -> some View {
         ProgressView(timerInterval: d.start...max(d.start, d.end), countsDown: false) {

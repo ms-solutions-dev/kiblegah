@@ -160,6 +160,25 @@ import Testing
         let yeni = PrayerTimesStore(folder: folderURL, source: k)
         #expect(await yeni.stored()?.days.count == t?.days.count)
     }
+
+    /// After midnight the current time is yesterday's Yatsı; without that day it started at 0:00 (24.11.).
+    @Test func afterMidnightYatsiStartsYesterday() async throws {
+        let k = Counter(.calculated)
+        let d = PrayerTimesStore(folder: folder(), source: k)
+        var location = Location.sample
+        location.diyanetDistrict = nil
+        let tz = location.timeZone
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = tz
+        let night = try #require(
+            calendar.date(from: DateComponents(year: 2026, month: 11, day: 24, hour: 1, minute: 8)))
+        let t = try #require(await d.update(location: location, now: night, force: true))
+        let today = Day(night, timeZoneIdentifier: tz)
+        #expect(t.day(today.added(-1)) != nil)
+        let status = try #require(PrayerTimeStatus(table: t, time: night))
+        #expect(status.current == .isha)
+        #expect(status.currentStart == t.day(today.added(-1))?[.isha])
+    }
 }
 
 @Suite struct DerivedTests {
